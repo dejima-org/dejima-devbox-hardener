@@ -283,6 +283,29 @@ cmd_radius() {
     say "  token is revoked and reissued; a personal key is every host that"
     say "  trusts it."
 
+    # Listed separately because the advice differs. Everything above can be
+    # taken off the box; this cannot, so knowing it is here is the whole of
+    # what an operator can do about it.
+    say ""
+    say "The credential that cannot be moved off:"
+    if [ -f "$HOME/.claude/.credentials.json" ]; then
+        say "  $(stat -c '%A %U:%G' "$HOME/.claude/.credentials.json" 2>/dev/null)  $HOME/.claude/.credentials.json"
+        say "  The model API token. dejima keeps it out of the container, so a"
+        say "  session can use the API while it runs and cannot carry the token"
+        say "  away. The proxy that holds it runs here, so root here has it."
+        say "  That is the step which turns temporary use into a token someone"
+        say "  keeps. If this box is ever suspect, rotate this first."
+        say ""
+        say "  Not because it is the only thing here worth taking - source and"
+        say "  uncommitted work leave just as easily - but because it is a"
+        say "  standing capability rather than a copy, and it sits at a known"
+        say "  path under a known name, which makes it among the easiest things"
+        say "  on this box to find."
+    else
+        say "  no ~/.claude/.credentials.json here. Either this host does not"
+        say "  launch sessions, or authentication is by API key held elsewhere."
+    fi
+
     say ""
     say "Group membership:"
     if id 2>/dev/null | grep -q '(docker)'; then
@@ -295,12 +318,12 @@ cmd_radius() {
     fi
 
     say ""
-    say "Agent memory reachable across projects:"
+    say "Agent memory on this host:"
     if [ -d "$HOME/.claude/projects" ]; then
-        say "  $(find "$HOME/.claude/projects" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l) project directories exist on this host."
-        say "  A session sees whichever of them dejima mounts. Scoping that to the"
-        say "  launching project is dejima#104. Verify with a fresh session rather"
-        say "  than by version number."
+        say "  $(find "$HOME/.claude/projects" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l) project directories, all of them readable by root here."
+        say "  That is what root on this VM reaches, which is this section's"
+        say "  subject. What a session inside a container reaches is a separate"
+        say "  question, decided by dejima's mounts rather than by anything here."
     else
         say "  no ~/.claude/projects on this host"
     fi

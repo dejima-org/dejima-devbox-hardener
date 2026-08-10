@@ -278,3 +278,18 @@ setup() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"not a detail"* ]]
 }
+
+@test "the credential that cannot be moved off the box is inventoried" {
+    # dejima keeps this one out of the container on purpose, so an escape onto
+    # the devbox is the step that reaches it. Not the only thing here worth
+    # taking, but a standing capability rather than a copy of data, and at a
+    # known path - so a radius report that lists SSH keys and omits it is
+    # missing the one an attacker would look for first.
+    HOME="$BATS_TEST_TMPDIR"
+    mkdir -p "$HOME/.claude"
+    printf 'TOKENMATERIAL\n' > "$HOME/.claude/.credentials.json"
+    run cmd_radius
+    [[ "$output" == *".credentials.json"* ]]
+    [[ "$output" != *TOKENMATERIAL* ]]
+    [[ "$output" == *"cannot be moved off"* ]]
+}

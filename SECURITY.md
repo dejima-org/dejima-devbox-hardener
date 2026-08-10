@@ -5,6 +5,11 @@
 It bounds what a compromised developer VM can reach on your network, and
 reports what that bound is.
 
+**On your network** is the whole of the claim. It does not bound egress to the
+internet, and nothing on the VM does: outbound traffic to public addresses is
+permitted by design. Exfiltration and command-and-control are out of scope, and
+a compromise here can phone home. What is bounded is where it can spread.
+
 It does not prevent root on that VM, and nothing here tries to. It does not make
 running agent-authored code safe. It does not roll anything back: unlike a CI
 runner, a devbox holds uncommitted work, so there is no scheduled undo and no
