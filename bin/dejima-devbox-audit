@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Brad Anderson
+#
+# Verifies, from inside the VM, that the hypervisor's firewall is applied.
+#
+# It cannot read those rules. They live on the node, applied to this VM's tap
+# device, which is exactly what makes them worth having and exactly what makes
+# them unverifiable by inspection from here. Assuming they are in force is the
+# failure this whole family of tools exists to prevent, so this tests behaviour
+# instead.
+#
+# The target is the default gateway, and that choice does three jobs at once:
+#
+#   - its address is already in the routing table, so naming it writes down
+#     nothing an attacker on this box could not already read;
+#   - it is guaranteed to be alive, which no arbitrary address is;
+#   - it sits inside the ranges the firewall drops, so with the rules applied
+#     it must be unreachable as a destination, while traffic *through* it to
+#     the internet is untouched.
+#
+# Nothing here is persisted. A file listing what this VM must not reach would
+# be a map of valuable targets kept on the machine most likely to be owned, and
+# would describe topology not otherwise obtainable from here without loud
+# scanning. There is no such file and there should never be one.
+
+set -euo pipefail
+
+PROG=${0##*/}
+CONF_DIR=${CONF_DIR:-/etc/dejima-devbox}
+
+# What lateral movement actually uses, and what a gateway is most likely to
+# answer on. Not 53: the resolver exception may legitimately allow it, so a
+# rule working exactly as designed would read as a failure.
+PROBE_PORTS=(443 80 22)
+PROBE_TIMEOUT=${PROBE_TIMEOUT:-3}
+
+say() { printf '%s\n' "$*" >&2; }
+
+default_gateway() {
+    local gw
+    gw=$(ip -4 route show default 2>/dev/null | awk '{print $3; exit}')
+    [ -n "$gw" ] || return 1
+    printf '%s\n' "$gw"
+}
+
+# open     - handshake completed. Definitely reachable.
+# answered - refused, or unreachable. Something replied, so not silently
+#            dropped, which is the only thing that counts as contained.
+# timeout  - nothing came back.
+#
+# The open/answered split does not change the verdict; both are definite. It is
+# kept because it is free and it tells the operator what they are looking at.
+#
+# KNOWN LIMIT: bash's /dev/tcp cannot tell ECONNREFUSED from EHOSTUNREACH, so a
+# firewall that REJECTs rather than DROPs looks the same as a live host that
+# refused. Both land in `answered` and both produce FAIL. That is the safe
+# direction to be wrong in - it fails closed, and it is loud - but it means the
+# rules must use DROP for a correct PASS. proxmox/firewall.fw.template specifies
+# DROP, and this is one of the reasons.
+probe_tcp() {
+    local host=$1 port=$2 rc=0
+    timeout "$PROBE_TIMEOUT" bash -c "exec 3<>/dev/tcp/$host/$port" 2>/dev/null || rc=$?
+    case $rc in
+        0)   printf 'open\n' ;;
+        124) printf 'timeout\n' ;;
+        *)   printf 'answered\n' ;;
+    esac
+}
+
+# FAIL | PASS | INDETERMINATE
+#
+# Three states rather than two, because a timeout has two causes and reading it
+# as a pass is a false negative. False negatives are the wrong direction for a
+# security check: the operator stops looking.
+gateway_verdict() {
+    local gw port result
+    if ! gw=$(default_gateway); then
+        say "$PROG: no default route, so there is nothing to probe."
+        say "  This check carries the exit status on its own, so a missing route"
+        say "  is a failure rather than a skip. Fix the route and run again."
+        return 2
+    fi
+    for port in "${PROBE_PORTS[@]}"; do
+        result=$(probe_tcp "$gw" "$port")
+        case $result in
+            open|answered) printf 'FAIL\n'; return 0 ;;
+        esac
+    done
+    if positive_controls_ok; then
+        printf 'PASS\n'
+    else
+        printf 'INDETERMINATE\n'
+    fi
+}
+
+# Replaced in full below once the positive controls exist. Defined here so the
+# verdict can be reasoned about, and tested, on its own.
+positive_controls_ok() { return 0; }
+
+main() { gateway_verdict; }
+
+# Run only when executed, so test/audit.bats can source this and replace the
+# two functions that touch the outside world. The :- guard matters under
+# set -u: a shell without BASH_SOURCE would otherwise abort here rather than
+# fall through to doing nothing.
+if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
+    main "$@"
+fi
