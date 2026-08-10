@@ -94,11 +94,81 @@ gateway_verdict() {
     fi
 }
 
-# Replaced in full below once the positive controls exist. Defined here so the
-# verdict can be reasoned about, and tested, on its own.
-positive_controls_ok() { return 0; }
+# The forge's name, from config. Nothing is derived from the network here on
+# purpose: an attacker standing on this box can read /etc/dejima-devbox/config
+# as easily as we can, so there is no secret to protect and no reason to be
+# clever. What matters is that it is one value in one place, matching the rule
+# on the hypervisor - see proxmox/README.md, "Values that must agree".
+forge_host() {
+    local f="$CONF_DIR/config" v=""
+    [ -r "$f" ] && v=$(sed -n 's/^forge_host=//p' "$f" | tail -1)
+    [ -n "$v" ] || return 1
+    printf '%s\n' "$v"
+}
 
-main() { gateway_verdict; }
+resolve_ok() { getent hosts "$1" >/dev/null 2>&1; }
+
+# Does the network demonstrably work?
+#
+# This is the whole reason a timeout to the gateway can mean anything. If the
+# forge resolves or answers, packets are moving and the tap is up, so silence
+# from the gateway is a filter. Without that, silence is just silence.
+#
+# Either control alone is sufficient, and they fail differently on purpose:
+# resolution exercises the resolver exception, a handshake exercises layer 4
+# and the forge exception. Requiring both would turn an unrelated outage into
+# a report the operator learns to ignore.
+positive_controls_ok() {
+    local host
+    host=$(forge_host) || return 1
+    resolve_ok "$host" && return 0
+    [ "$(probe_tcp "$host" 443)" = open ] && return 0
+    return 1
+}
+
+cmd_reach() {
+    local verdict rc=0
+    verdict=$(gateway_verdict) || return $?
+    case $verdict in
+        PASS)
+            say "PASS: the gateway is unreachable, and the network is working."
+            say "  Both halves matter. The second is what makes the first mean"
+            say "  something rather than being indistinguishable from a dead link."
+            ;;
+        FAIL)
+            say "FAIL: the gateway answered."
+            say "  Either the hypervisor rules are not applied to this VM, or an"
+            say "  exception above the DROPs is wider than it looks. Check the"
+            say "  Network device's Firewall checkbox first, then rule order in the"
+            say "  security group - the console appends, so a rule added later sits"
+            say "  below the DROPs and does nothing."
+            say ""
+            say "  One false alarm is possible: if a rule REJECTs rather than DROPs,"
+            say "  the block is working but sends an answer back, and this probe"
+            say "  cannot tell that from a live host refusing. Use DROP."
+            rc=1
+            ;;
+        INDETERMINATE)
+            say "INDETERMINATE: nothing answered, including things that should."
+            say "  That is consistent with the firewall working and equally"
+            say "  consistent with the network being broken, and this check cannot"
+            say "  tell them apart. Fix connectivity, then run again."
+            say ""
+            say "  It is not a pass. A check that reports success when it does not"
+            say "  know is worse than no check, because it gets believed."
+            rc=1
+            ;;
+    esac
+    printf '%s\n' "$verdict"
+    return $rc
+}
+
+main() {
+    case "${1:-reach}" in
+        reach) cmd_reach ;;
+        *)     say "usage: $PROG reach"; return 64 ;;
+    esac
+}
 
 # Run only when executed, so test/audit.bats can source this and replace the
 # two functions that touch the outside world. The :- guard matters under

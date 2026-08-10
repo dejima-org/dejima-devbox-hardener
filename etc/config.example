@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Brad Anderson
+#
+# Installed to /etc/dejima-devbox/config by dejima-devbox-bootstrap.
+#
+# One key, deliberately. Everything else the audit needs it takes from the
+# machine: the gateway from the routing table, and whether the network works
+# from whether the forge answers.
+#
+# There is no list here of what this VM must not reach, and there should never
+# be one. Such a list is a map of valuable targets, kept on the machine this
+# project assumes will be owned, describing topology that is not otherwise
+# obtainable from here without loud scanning.
+#
+# This value must match the destination of the forge rules on the hypervisor.
+# See proxmox/README.md, "Values that must agree". They are entered in two
+# places and are silent when they disagree: the audit reports INDETERMINATE,
+# which is correct and unhelpful.
+
+forge_host=forge.example.invalid
