@@ -162,3 +162,41 @@ jobs:
           chown -R node:node .
           su node -c "bats test/"
 
+
+  runner-env:
+    # Asserts on the RUNNER rather than on the change, which is why it is a
+    # separate job: a red `runner-env` should say "the machine is wrong", and a
+    # red `tests` should say "the branch is wrong". One job reporting both
+    # makes every failure ambiguous.
+    #
+    # Same label as the job above, deliberately. The point is not to reach a
+    # different runner, it is to check that the runner this repository asked
+    # for is the one it got. `runs-on:` is a request, and nothing in a job's
+    # log says whether the Docker socket was mounted into it.
+    runs-on: dejima-confined
+    container:
+      image: node:20-bookworm
+    steps:
+      # No `ref:`, unlike the job above, and that is the whole value of this
+      # one. Under pull_request_target a bare checkout gets the BASE branch, so
+      # these assertions come from main. A branch that could edit the file
+      # asserting it was not handed a Docker socket could assert anything it
+      # liked.
+      #
+      # There is no bootstrapping problem here, which is worth writing down
+      # because there appears to be one. This job cannot run on the pull
+      # request that introduces it: the workflow itself is read from main too,
+      # so until this merges, main defines only the job above and this one does
+      # not exist as far as the run is concerned. By the time it first fires,
+      # main has both the job and the file it runs.
+      - uses: actions/checkout@v4
+
+      - run: |
+          apt-get update
+          apt-get install -y --no-install-recommends bats python3 ca-certificates
+
+      - run: bats test/runner-env.bats
+        env:
+          # Declared, not detected. Landing on the wrong runner should fail
+          # rather than quietly select a different set of assertions.
+          DEJIMA_CI_TIER: confined
