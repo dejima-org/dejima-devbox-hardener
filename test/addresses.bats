@@ -50,6 +50,13 @@ setup() {
         192.0.2.0/24        # the three RFC 5737 documentation ranges, named
         198.51.100.0/24     # in the guidance above as what to reach for
         203.0.113.0/24
+
+        1.1.1.1             # a public resolver, as the off-list probe in
+                            # runner-env.bats. It has to be an address that
+                            # ANSWERS when reachable: a documentation range
+                            # would satisfy every negative check on a runner
+                            # with no network at all, which is the failure
+                            # that file exists to detect
     )
 
     # Anything inside the RFC 5737 documentation ranges is fine without being
