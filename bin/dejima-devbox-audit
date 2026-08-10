@@ -163,10 +163,92 @@ cmd_reach() {
     return $rc
 }
 
+# What root on this VM would obtain.
+#
+# This looks like the target list the audit refuses to keep, and it is not. The
+# difference is where the information lives. A list of other hosts describes the
+# network beyond this VM, which is not obtainable from here without scanning
+# loud enough to notice. An inventory of this box describes a box the attacker
+# is already standing on, and reveals nothing a single find would not.
+#
+# Paths and modes. Never contents.
+cmd_radius() {
+    local f found=0 newest
+
+    say ""
+    say "== What root on this VM would get =="
+
+    say ""
+    say "Credentials present:"
+    for f in "$HOME"/.ssh/id_* "$HOME"/.aws/credentials "$HOME"/.config/gh/hosts.yml \
+             "$HOME"/.docker/config.json "$CONF_DIR"/*token*; do
+        case "$f" in *.pub) continue ;; esac
+        [ -f "$f" ] || continue
+        found=1
+        say "  $(stat -c '%A %U:%G' "$f" 2>/dev/null)  $f"
+    done
+    [ "$found" = 1 ] || say "  none found"
+    say "  Anything listed here is reusable somewhere else. A scoped deploy"
+    say "  token is revoked and reissued; a personal key is every host that"
+    say "  trusts it."
+
+    say ""
+    say "Group membership:"
+    if id 2>/dev/null | grep -q '(docker)'; then
+        say "  in the docker group, which is root-equivalent: 'docker run -v /:/host"
+        say "  --privileged' is one command and needs no exploit."
+        say "  Reported, not corrected. dejima needs it, and separating escape from"
+        say "  root was weighed and rejected - see docs/threat-model.md."
+    else
+        say "  not in the docker group"
+    fi
+
+    say ""
+    say "Agent memory reachable across projects:"
+    if [ -d "$HOME/.claude/projects" ]; then
+        say "  $(find "$HOME/.claude/projects" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l) project directories exist on this host."
+        say "  A session sees whichever of them dejima mounts. Scoping that to the"
+        say "  launching project is dejima#104. Verify with a fresh session rather"
+        say "  than by version number."
+    else
+        say "  no ~/.claude/projects on this host"
+    fi
+
+    say ""
+    say "Patch currency:"
+    say "  running kernel:   $(uname -r)"
+    newest=""
+    if command -v dpkg-query >/dev/null 2>&1; then
+        # The || true is load-bearing. dpkg-query exits non-zero when nothing
+        # matches, and under set -e with pipefail that killed this function
+        # halfway through its own report - which looked like the report simply
+        # ending, with no error anywhere. Found by running it in a container.
+        newest=$(dpkg-query -W -f='${Package}\n' 'linux-image-[0-9]*' 2>/dev/null \
+                 | sort -V | tail -1 | sed 's/^linux-image-//' || true)
+    fi
+    if [ -n "$newest" ]; then
+        say "  newest installed: $newest"
+        [ "$newest" = "$(uname -r)" ] \
+            || say "  THESE DIFFER. A reboot is pending, and the fix is not running."
+    else
+        # Blank would read as a bug. Say which question went unanswered.
+        say "  newest installed: could not tell - no packaged kernel found."
+        say "  Expected on a container or an image-based system, and worth a"
+        say "  second look on a VM, where it usually means the check is wrong"
+        say "  rather than that no kernel is installed."
+    fi
+    say "  A pending reboot is the usual reason a patched box is not patched."
+    say "  Keeping these two equal is the whole of the response to container"
+    say "  escape here, so it is not a detail."
+    return 0
+}
+
 main() {
-    case "${1:-reach}" in
-        reach) cmd_reach ;;
-        *)     say "usage: $PROG reach"; return 64 ;;
+    case "${1:-all}" in
+        reach)  cmd_reach ;;
+        radius) cmd_radius ;;
+        all)    cmd_radius; cmd_reach ;;
+        *)      say "usage: $PROG [reach|radius]"; return 64 ;;
     esac
 }
 

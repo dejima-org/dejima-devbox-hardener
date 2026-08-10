@@ -128,3 +128,69 @@ setup() {
     run cmd_reach
     [[ "$output" == *REJECT* ]]
 }
+
+# --- radius report ----------------------------------------------------------
+#
+# This one inventories the box rather than the network, and the distinction is
+# the whole reason it is allowed to exist. A list of other hosts would describe
+# topology unobtainable from here without loud scanning. An inventory of this
+# machine describes a machine the attacker is already standing on, and reveals
+# nothing a single find would not.
+
+@test "the radius report never prints the contents of a credential" {
+    HOME="$BATS_TEST_TMPDIR"
+    mkdir -p "$HOME/.ssh"
+    printf 'SUPERSECRETKEYMATERIAL\n' > "$HOME/.ssh/id_ed25519"
+    chmod 600 "$HOME/.ssh/id_ed25519"
+    run cmd_radius
+    [[ "$output" != *SUPERSECRETKEYMATERIAL* ]]
+    [[ "$output" == *id_ed25519* ]]
+}
+
+@test "a public key is not reported as a credential" {
+    HOME="$BATS_TEST_TMPDIR"
+    mkdir -p "$HOME/.ssh"
+    printf 'ssh-ed25519 AAAA nobody@example\n' > "$HOME/.ssh/id_ed25519.pub"
+    printf 'private\n' > "$HOME/.ssh/id_ed25519"
+    run cmd_radius
+    # Both halves. Without the second this passes on empty output, which is
+    # what it would have done against a cmd_radius that did not exist.
+    [[ "$output" != *id_ed25519.pub* ]]
+    [[ "$output" == *id_ed25519* ]]
+}
+
+@test "the radius report does not change the exit status" {
+    # It describes choices, not faults. Only reachability carries the status.
+    HOME="$BATS_TEST_TMPDIR"
+    run cmd_radius
+    [ "$status" -eq 0 ]
+}
+
+@test "docker group membership is reported as a fact, not corrected" {
+    HOME="$BATS_TEST_TMPDIR"
+    id() { printf 'uid=1000(dev) gid=1000(dev) groups=1000(dev),109(docker)\n'; }
+    run cmd_radius
+    [[ "$output" == *"root-equivalent"* ]]
+}
+
+@test "no docker group is reported too, rather than left silent" {
+    HOME="$BATS_TEST_TMPDIR"
+    id() { printf 'uid=1000(dev) gid=1000(dev) groups=1000(dev)\n'; }
+    run cmd_radius
+    [[ "$output" == *"not in the docker group"* ]]
+}
+
+@test "the radius report runs to its end rather than stopping quietly" {
+    # It stopped halfway once: dpkg-query exits non-zero when no kernel package
+    # matches, and under set -e with pipefail that killed the function mid-
+    # report. Nothing was printed about it. The report simply ended, which on a
+    # tool whose job is to tell you what you are exposed to is the worst
+    # available failure. Assert the last section, not just the first.
+    HOME="$BATS_TEST_TMPDIR"
+    run cmd_radius
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Credentials present"* ]]
+    [[ "$output" == *"Group membership"* ]]
+    [[ "$output" == *"Patch currency"* ]]
+    [[ "$output" == *"not a detail"* ]]
+}

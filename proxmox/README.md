@@ -197,7 +197,16 @@ to refusing a harmless convenience.
 
 What the inbound list does affect is the attack surface of the front door
 itself. So the number worth knowing is not how many subnets are listed but how
-many addresses they cover, which is what `dejima-devbox-audit` reports.
+many addresses they cover. Work it out once, here, and write it at the top of
+the group: a /24 is 254 hosts and a /22 is over a thousand, and "three subnets"
+sounds identical either way.
+
+`dejima-devbox-audit` cannot do this arithmetic for you, and it is worth saying
+why rather than leaving it looking like an omission. The audit runs inside the
+VM and the rules are on the node, so it can no more read your inbound list than
+it can read the DROPs. It verifies outbound containment by behaviour, which is
+possible from inside. Inbound exposure can only be checked from outside, by
+trying to connect, and this tool does not go looking for things to connect to.
 
 #### Two more, if the VM gets its address by DHCP
 
