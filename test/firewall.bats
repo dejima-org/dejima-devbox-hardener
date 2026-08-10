@@ -8,8 +8,9 @@
 # is dead, and dead in the quietest possible way: the VM boots, the console
 # shows the rules present, and the box simply cannot reach its forge.
 #
-# The console appends new rules at the bottom, so getting this wrong is the
-# default outcome of adding a rule later rather than an unusual mistake.
+# The console inserts new rules at the TOP of the list, so entering them in the
+# documented order produces the reverse of it. Getting this wrong is therefore
+# the default outcome of following the table, not an unusual mistake.
 
 setup() {
     REPO="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
