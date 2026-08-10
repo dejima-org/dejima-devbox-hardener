@@ -194,3 +194,87 @@ setup() {
     [[ "$output" == *"Patch currency"* ]]
     [[ "$output" == *"not a detail"* ]]
 }
+
+# --- addressing mode and lease health ---------------------------------------
+#
+# The spec asked for this and the first implementation left it out. It matters
+# because it is the one failure in this design that is invisible for up to a
+# full lease time: a DHCP guest behind these rules renews through a path the
+# firewall may be dropping, nothing breaks at boot, and the VM falls off the
+# network much later looking nothing like a firewall rule.
+
+@test "a static interface is reported as static" {
+    INTERFACES_FILE="$BATS_TEST_TMPDIR/interfaces"
+    printf 'iface ens18 inet static\n  address 192.0.2.5/24\n' > "$INTERFACES_FILE"
+    run addressing_mode
+    [ "$output" = static ]
+}
+
+@test "a dhcp interface is reported as dhcp" {
+    INTERFACES_FILE="$BATS_TEST_TMPDIR/interfaces"
+    printf 'iface ens18 inet dhcp\n' > "$INTERFACES_FILE"
+    run addressing_mode
+    [ "$output" = dhcp ]
+}
+
+@test "static wins over a stale lease left behind by an earlier dhcp life" {
+    # A host pinned by dejima-devbox-static-ip keeps its old lease files. If
+    # those decided the answer, every pinned host would be told it needs DHCP
+    # rules it does not need.
+    INTERFACES_FILE="$BATS_TEST_TMPDIR/interfaces"
+    printf 'iface ens18 inet static\n' > "$INTERFACES_FILE"
+    lease_file() { printf '%s\n' "$BATS_TEST_TMPDIR/old.leases"; }
+    printf 'lease {\n  expire 0 2020/01/01 00:00:00;\n}\n' > "$BATS_TEST_TMPDIR/old.leases"
+    run addressing_mode
+    [ "$output" = static ]
+}
+
+@test "neither is reported as unknown rather than guessed" {
+    INTERFACES_FILE="$BATS_TEST_TMPDIR/none"
+    lease_file() { return 1; }
+    run addressing_mode
+    [ "$output" = unknown ]
+}
+
+@test "a lease already past its renewal time is reported as not renewing" {
+    INTERFACES_FILE="$BATS_TEST_TMPDIR/interfaces"
+    printf 'iface ens18 inet dhcp\n' > "$INTERFACES_FILE"
+    # Not $f: cmd_radius declares `local f`, which shadows it and made this
+    # stub return an empty path. A fixture variable a function might shadow is
+    # a trap; give it a name nothing else would pick.
+    fixture_lease="$BATS_TEST_TMPDIR/cur.leases"
+    lease_file() { printf '%s\n' "$fixture_lease"; }
+    past=$(date -u -d '2 hours ago' '+%Y/%m/%d %H:%M:%S')
+    future=$(date -u -d '6 hours' '+%Y/%m/%d %H:%M:%S')
+    printf 'lease {\n  renew 0 %s;\n  expire 0 %s;\n}\n' "$past" "$future" > "$fixture_lease"
+    touch -d '3 hours ago' "$fixture_lease"
+    run cmd_radius
+    [[ "$output" == *"NOT BEEN RENEWED"* ]]
+}
+
+@test "a lease still inside its renewal window is not reported as failing" {
+    INTERFACES_FILE="$BATS_TEST_TMPDIR/interfaces"
+    printf 'iface ens18 inet dhcp\n' > "$INTERFACES_FILE"
+    fixture_lease="$BATS_TEST_TMPDIR/cur.leases"
+    lease_file() { printf '%s\n' "$fixture_lease"; }
+    future=$(date -u -d '6 hours' '+%Y/%m/%d %H:%M:%S')
+    later=$(date -u -d '12 hours' '+%Y/%m/%d %H:%M:%S')
+    printf 'lease {\n  renew 0 %s;\n  expire 0 %s;\n}\n' "$future" "$later" > "$fixture_lease"
+    run cmd_radius
+    # Both halves. Asserting only the absence of the warning passes on a
+    # report that says nothing about leases at all, which is how this test
+    # went green before the feature existed.
+    [[ "$output" == *"Addressing"* ]]
+    [[ "$output" != *"NOT BEEN RENEWED"* ]]
+}
+
+@test "an unparseable lease file does not take the report down with it" {
+    INTERFACES_FILE="$BATS_TEST_TMPDIR/interfaces"
+    printf 'iface ens18 inet dhcp\n' > "$INTERFACES_FILE"
+    fixture_lease="$BATS_TEST_TMPDIR/junk.leases"
+    lease_file() { printf '%s\n' "$fixture_lease"; }
+    printf 'this is not a lease\n' > "$fixture_lease"
+    run cmd_radius
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"not a detail"* ]]
+}

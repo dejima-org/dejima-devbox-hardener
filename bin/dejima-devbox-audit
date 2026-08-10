@@ -108,6 +108,56 @@ forge_host() {
 
 resolve_ok() { getent hosts "$1" >/dev/null 2>&1; }
 
+# --- addressing -------------------------------------------------------------
+#
+# Which mode this host uses decides whether it needs the two DHCP rules on the
+# hypervisor, and that question has the nastiest failure in the whole design.
+# A DHCP guest behind these rules renews through a path the firewall may be
+# dropping. Nothing breaks at boot, because the first lease was obtained before
+# the rules mattered. The VM simply stops renewing and falls off the network up
+# to a full lease time later, looking nothing like a firewall rule.
+
+INTERFACES_FILE=${INTERFACES_FILE:-/etc/network/interfaces}
+LEASE_GLOB=${LEASE_GLOB:-/var/lib/dhcp/dhclient*.leases}
+
+lease_file() {
+    local f
+    # shellcheck disable=SC2086
+    f=$(ls -t $LEASE_GLOB 2>/dev/null | head -1)
+    [ -n "$f" ] || return 1
+    printf '%s\n' "$f"
+}
+
+# static | dhcp | unknown
+#
+# Static is checked first, and that order is the whole correctness of this
+# function. A host pinned by dejima-devbox-static-ip keeps the lease files from
+# whatever it was doing before, so letting a lease decide would tell every
+# pinned host it needs rules it does not need.
+addressing_mode() {
+    if [ -r "$INTERFACES_FILE" ] \
+       && grep -qE '^[[:space:]]*iface[[:space:]]+\S+[[:space:]]+inet[[:space:]]+static' "$INTERFACES_FILE"; then
+        printf 'static\n'; return 0
+    fi
+    if { [ -r "$INTERFACES_FILE" ] \
+         && grep -qE '^[[:space:]]*iface[[:space:]]+\S+[[:space:]]+inet[[:space:]]+dhcp' "$INTERFACES_FILE"; } \
+       || lease_file >/dev/null; then
+        printf 'dhcp\n'; return 0
+    fi
+    # Not guessed. An unrecognised setup is a thing to look at, not a thing to
+    # assume the friendlier answer about.
+    printf 'unknown\n'
+}
+
+# dhclient writes "renew 3 2026/08/10 04:12:33;" in UTC. Prints epoch seconds.
+lease_time() {  # lease_time FILE KEY
+    local v
+    v=$(grep -E "^[[:space:]]*$2 " "$1" 2>/dev/null | tail -1 \
+        | sed -E "s/^[[:space:]]*$2 [0-9] //; s/;[[:space:]]*$//") || return 1
+    [ -n "$v" ] || return 1
+    date -u -d "$v" +%s 2>/dev/null || return 1
+}
+
 # Does the network demonstrably work?
 #
 # This is the whole reason a timeout to the gateway can mean anything. If the
@@ -163,6 +213,47 @@ cmd_reach() {
     return $rc
 }
 
+# Is the lease actually being renewed?
+#
+# Detected without keeping any state between runs, which matters: the obvious
+# design is to record the expiry each run and see whether it advances, and that
+# means this program starts writing files. It does not need to. dhclient
+# rewrites the lease file on every successful renewal, so the file's own mtime
+# against the renewal time it records answers the question in one pass.
+#
+# Past T1 with an mtime older than T1 means dhclient asked and got nothing
+# back. That is precisely the shape of a dropped reply, and it is visible hours
+# before the lease expires and the VM disappears.
+lease_report() {
+    local f now renew expire
+    if ! f=$(lease_file); then
+        say "  No lease file found, so renewal cannot be checked here."
+        return 0
+    fi
+    now=$(date -u +%s)
+    renew=$(lease_time "$f" renew) || renew=""
+    expire=$(lease_time "$f" expire) || expire=""
+
+    if [ -n "$expire" ]; then
+        say "  Lease expires in $(( (expire - now) / 3600 ))h."
+    fi
+    if [ -z "$renew" ]; then
+        say "  No renewal time in $f, so renewal cannot be checked."
+        return 0
+    fi
+
+    if [ "$now" -gt "$renew" ] && [ "$(stat -c %Y "$f" 2>/dev/null || echo 0)" -lt "$renew" ]; then
+        say "  THIS LEASE HAS NOT BEEN RENEWED since its renewal time passed."
+        say "  dhclient asked and got nothing back, which is what a dropped"
+        say "  reply looks like. Check that BOTH DHCP rules are on the"
+        say "  hypervisor: the outbound one alone gets the request out and the"
+        say "  lease still never completes."
+        say "  This is visible now and costs you the network when the lease"
+        say "  expires, which is the whole reason it is worth reporting early."
+    fi
+    return 0
+}
+
 # What root on this VM would obtain.
 #
 # This looks like the target list the audit refuses to keep, and it is not. The
@@ -173,7 +264,7 @@ cmd_reach() {
 #
 # Paths and modes. Never contents.
 cmd_radius() {
-    local f found=0 newest
+    local f found=0 newest mode
 
     say ""
     say "== What root on this VM would get =="
@@ -213,6 +304,28 @@ cmd_radius() {
     else
         say "  no ~/.claude/projects on this host"
     fi
+
+    say ""
+    say "Addressing:"
+    mode=$(addressing_mode)
+    case $mode in
+        static)
+            say "  static in the guest. Needs no DHCP rules on the hypervisor,"
+            say "  which is the tightest of the three modes at the boundary."
+            ;;
+        dhcp)
+            say "  DHCP. The hypervisor needs BOTH halves of the DHCP pair - out"
+            say "  udp/67 and in udp/68 - including when the address is reserved"
+            say "  for you on the router. A reservation does not stop the guest"
+            say "  speaking DHCP."
+            lease_report
+            ;;
+        *)
+            say "  could not tell. Neither a static nor a dhcp stanza was found"
+            say "  in $INTERFACES_FILE and there is no lease file, so whether"
+            say "  this host needs the DHCP rules is an open question."
+            ;;
+    esac
 
     say ""
     say "Patch currency:"

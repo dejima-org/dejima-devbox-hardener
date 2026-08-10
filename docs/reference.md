@@ -64,6 +64,30 @@ Plain DHCP is more workable here than in the sister project, because the inbound
 rules are scoped to client subnets rather than to this VM's own address, so a
 changed lease breaks nothing in the rule set.
 
+### What the audit reports about addressing
+
+`dejima-devbox-audit radius` names the mode and, on DHCP, checks the lease.
+
+Static is decided before any lease file is consulted, deliberately: a host
+pinned by `dejima-devbox-static-ip` keeps the leases from whatever it was doing
+before, and letting those decide would tell every pinned host it needs rules it
+does not need. A setup matching neither is reported as `unknown` rather than
+assumed to be the friendlier answer.
+
+**The lease check exists for the worst failure in this design.** A DHCP guest
+behind these rules renews through a path the firewall may be dropping. Nothing
+breaks at boot, because the first lease was obtained before the rules mattered.
+The VM stops renewing and falls off the network up to a full lease time later,
+looking nothing like a firewall rule.
+
+It is detected without keeping any state between runs. The obvious design
+records the expiry each run and watches whether it advances, which means this
+program starts writing files. It does not need to: `dhclient` rewrites the lease
+file on every successful renewal, so the file's own mtime against the renewal
+time it records answers the question in one pass. Past T1 with an mtime older
+than T1 means `dhclient` asked and got nothing back, which is exactly the shape
+of a dropped reply, and it is visible hours before the lease expires.
+
 ## Configuration
 
 `/etc/dejima-devbox/config`, one key:
