@@ -1,0 +1,164 @@
+# Runs the bats suite on every pull request and on every push to one.
+# `pull_request` fires on opened/reopened/synchronize, and synchronize is the
+# push-to-an-open-PR event, so both are covered without listing types.
+#
+# Split by what each half NEEDS. `bats test/` runs anywhere a shell does - it
+# stubs curl, dnsmasq and docker, on purpose, because the properties worth
+# checking are in what these programs decide rather than in what the system
+# does afterwards. The compose job needs a real Docker daemon and a real
+# compose plugin, because the thing it checks is precisely what a stub cannot:
+# whether what dejima-ci-runners emits is a compose file Docker will accept.
+#
+# Both jobs name the same runner anyway. Only one label is registered for this
+# repository, and a job that "runs anywhere" is a statement about what it needs
+# rather than about what it should be handed.
+name: tests
+
+# `pull_request_target`, not `pull_request`, and the difference is the whole
+# security posture of this file.
+#
+# Under `pull_request` the workflow is read from the HEAD of the pull request,
+# so the branch under test decides what runs and, critically, `runs-on:`. A
+# branch can point its jobs at any runner its repository can reach, which makes
+# every control the runner provides opt-out by whoever wrote the branch.
+#
+# Under `pull_request_target` Gitea reads the workflow from the BASE branch and
+# explicitly discards any pull_request_target workflow found on the head
+# commit, so a branch can neither edit this file's copy nor introduce its own.
+# What runs here, and where, is whatever `main` says.
+#
+# The cost is that the run's ref is the base branch, so a bare checkout gets
+# `main`. Jobs that test the change name the head explicitly; the two
+# runner-env jobs deliberately do not, because they assert on the RUNNER rather
+# than on the change, and their assertions should come from `main` where a
+# branch can neither weaken nor delete them.
+#
+# This does NOT make the repository safe on its own. A branch can still add a
+# workflow of its own with `on: pull_request`, and that runs from the head with
+# whatever `runs-on:` it likes. The only thing stopping that is which runners
+# the repository can reach at all - see the README's "Register scope is the
+# boundary; the label is not". What this buys is that the intended CI is
+# trustworthy, and that escaping it means adding a file rather than editing
+# one.
+#
+# See dejima's docs/ci.md, "Pinning the workflow with pull_request_target":
+# https://gitbox.branderson.io/dejima/dejima/src/branch/main/docs/ci.md
+on:
+  pull_request_target:
+
+# No `concurrency:` block. Gitea does not implement one - so writing it here
+# would only claim a cancellation that never happens. On a single-capacity
+# runner, expect a backlog rather than a supersede, and cancel a stale run by
+# hand if it is in the way.
+
+jobs:
+  tests:
+    # The CONFINED tier, not the privileged one, and the difference is the
+    # point rather than a detail.
+    #
+    # Everything this repository tests is bats over shell scripts, YAML and
+    # markdown. Nothing here needs a Docker socket or the host's network
+    # namespace, so asking for a runner that grants both would be taking a
+    # privilege for no reason - in a repository whose entire subject is not
+    # doing that.
+    #
+    # The confined tier resolves only what .dejima/allowed-domains permits,
+    # which is deb.debian.org, which is where bats comes from. If a future test
+    # needs something else, the honest fix is to declare it there rather than
+    # to move this job to a runner that grants everything.
+    #
+    # If no runner carries this label, this job queues. That is the intended
+    # failure, and a better one than a green run on a host that grants more
+    # than the job asked for.
+    runs-on: dejima-confined
+    container:
+      # Debian bookworm plus a node binary - node is what actions/checkout
+      # needs to run at all, and apt-get is what everything below needs.
+      image: node:20-bookworm
+    steps:
+      # Before apt, because apt's failure for this says "Unable to locate
+      # package bats" and nothing about why.
+      #
+      # This tier DOES have an egress allowlist in front of it, so a name that
+      # fails here has one more possible cause than it would on the privileged
+      # tier: this repository's own .dejima/allowed-domains. The diagnosis
+      # below names that first, because it is the one thing a change in this
+      # repository can break.
+      #
+      # Retried rather than decided on one attempt: a resolver can be a moment
+      # behind a container's start, and apt itself retries, so failing a whole
+      # job on a single lookup would be stricter than the step it protects.
+      # Six attempts over ~15s, then a diagnosis.
+      #
+      # Uses only what the image already has: getent is libc.
+      - name: Check this host can resolve before installing anything
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if getent hosts deb.debian.org >/dev/null 2>&1; then
+              [ "$attempt" -eq 1 ] || echo "resolved on attempt $attempt"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "deb.debian.org did not resolve after 6 attempts, so this job" >&2
+          echo "cannot install anything." >&2
+          echo "" >&2
+          echo "This job's resolver:" >&2
+          sed -n 's/^nameserver/  nameserver/p' /etc/resolv.conf >&2
+          echo "" >&2
+          echo "This is the confined tier, so check in this order:" >&2
+          echo "" >&2
+          echo "1. .dejima/allowed-domains in THIS repository, on main." >&2
+          echo "   The runner reads it from main, not from this branch, so a" >&2
+          echo "   domain added on the branch under test is not yet in force." >&2
+          echo "   That is deliberate: a branch cannot grant itself a" >&2
+          echo "   destination." >&2
+          echo "" >&2
+          echo "2. On the runner host:" >&2
+          echo "     sudo dejima-ci-allowlist show   - what is actually served" >&2
+          echo "     cat /etc/resolv.conf            - the VM's own resolver" >&2
+          echo "" >&2
+          echo "If the VM cannot resolve either, the node firewall's udp/53 and" >&2
+          echo "tcp/53 pinholes are the usual cause - they must name the VM's" >&2
+          echo "NAMESERVER, not its gateway, and must sit ABOVE the LAN DROP" >&2
+          echo "rules. See proxmox/README.md section 3." >&2
+          exit 1
+
+      - name: Install test dependencies
+        run: |
+          apt-get update
+          # python3-yaml, not a YAML parser fetched at test time: two tests
+          # assert that the templates and the rendered files parse, and they
+          # skip rather than fail when no parser is present. A skip reads as a
+          # pass in the run summary, so the parser is installed here to make
+          # sure those two actually run.
+          apt-get install -y --no-install-recommends bats python3 python3-yaml ca-certificates
+
+      # The code under test, named explicitly. Under pull_request_target the
+      # run's ref is the base branch, so a bare checkout here would test `main`
+      # on every pull request and pass regardless of the change - green checks
+      # that mean nothing.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # As an ordinary user, not root. Kept from the sister repository because
+      # the reasoning outlives the test that prompted it: `[ -r ]` is access(2)
+      # with R_OK, which always succeeds for a process holding
+      # CAP_DAC_OVERRIDE, so any test distinguishing unreadable from missing
+      # passes vacuously as root. Jobs run as root by default, so this is a
+      # standing hazard rather than a one-off, and the test fails on the
+      # privilege of whoever
+      # ran it rather than on anything the program does.
+      #
+      # The test skips itself under root rather than failing, so this is what
+      # makes it actually run rather than what stops it breaking.
+      #
+      # Nothing else in the suite needs either privilege: it stubs curl,
+      # dnsmasq and docker, and writes only into its own temp directories.
+      # `node` is uid 1000 in this image and needs to own the checkout, which
+      # actions/checkout leaves owned by root.
+      - run: |
+          chown -R node:node .
+          su node -c "bats test/"
+
