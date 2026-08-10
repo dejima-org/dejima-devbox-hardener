@@ -1,0 +1,25 @@
+[Unit]
+Description=Check that the hypervisor firewall is still applied to this VM
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+
+# `reach`, not `all`, and that is a security decision rather than a tidiness
+# one. The radius report inventories credentials by path, and a timer running
+# it would write that inventory into the journal on a schedule, where it
+# outlives the session that produced it and is readable by anything that later
+# gets root. The reachability half has no sensitive output at all, and it is
+# also the only half that can change without anyone touching this VM.
+ExecStart=@@BIN_DIR@@/dejima-devbox-audit reach
+
+# The path above is a marker. bootstrap substitutes it and then checks that
+# what it wrote is executable, because a unit naming a program that is not
+# there fails with 203/EXEC on every start and says nothing anyone reads.
+
+User=root
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes

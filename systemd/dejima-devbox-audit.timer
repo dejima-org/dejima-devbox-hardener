@@ -1,0 +1,23 @@
+[Unit]
+Description=Re-check the hypervisor firewall periodically
+
+[Timer]
+# The rules this checks live on the hypervisor, where they are edited by hand
+# in a console, by a person who may not be thinking about this VM at the time.
+# A rule dragged below the DROPs, a security group detached, a Firewall
+# checkbox cleared while debugging something else: none of those produce any
+# symptom on this VM. The box keeps working. It is simply no longer contained.
+#
+# So the point of a schedule here is not freshness, it is that nobody has to
+# remember. Hourly catches it the same day, and three TCP probes to your own
+# gateway is not traffic worth noticing.
+OnBootSec=5min
+OnUnitActiveSec=1h
+RandomizedDelaySec=5min
+
+# Catch up after the VM has been off. A missed window is exactly when a change
+# went in unobserved.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
