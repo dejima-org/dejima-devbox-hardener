@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Brad Anderson
+#
+# The only entry point.
+#
+# There is no install.sh. The sister repository split bootstrap from install,
+# and the split was later judged to serve nothing: it produced two commands
+# that had to be run in the right order, and no host ever wanted one without
+# the other. This repository does not repeat it.
+#
+# What this does NOT do is apply the firewall. That is on the hypervisor, by
+# design, precisely so that a compromised guest cannot reach it - which means
+# a program running in the guest cannot reach it either. proxmox/README.md is
+# the half a person does, and this prints a reminder rather than pretending.
+
+set -euo pipefail
+
+PROG=${0##*/}
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+
+BIN_DIR=${BIN_DIR:-/usr/local/sbin}
+CONF_DIR=${CONF_DIR:-/etc/dejima-devbox}
+UNIT_DIR=${UNIT_DIR:-/etc/systemd/system}
+
+die() { echo "$PROG: $*" >&2; exit 1; }
+say() { printf '%s\n' "$*" >&2; }
+
+# The default is shown in brackets and taken on an empty answer, so a run with
+# nothing typed reproduces the run before it.
+ask() {
+    local __var="$1" prompt="$2" def="$3" ans=""
+    read -r -p "$prompt${def:+ [$def]}: " ans </dev/tty || true
+    printf -v "$__var" '%s' "${ans:-$def}"
+}
+
+cfg_get() {
+    [ -r "$CONF_DIR/config" ] || return 0
+    sed -n "s/^$1=//p" "$CONF_DIR/config" | tail -1
+}
+
+writable() { mkdir -p "$1" 2>/dev/null || true; [ -d "$1" ] && [ -w "$1" ]; }
+
+# ---------------------------------------------------------------------------
+# 1. Prerequisites, before anything that would need the network to work.
+
+for d in "$CONF_DIR" "$BIN_DIR" "$UNIT_DIR"; do
+    # Distinguish "cannot write" from "does not exist": [ -e ] cannot tell an
+    # absent directory from an unsearchable one, and reporting the wrong one
+    # sends people to reinstall something that is fine.
+    writable "$d" || die "cannot write $d - run with sudo, or set CONF_DIR/BIN_DIR/UNIT_DIR"
+done
+
+for c in ip timeout getent stat find; do
+    command -v "$c" >/dev/null || die "$c is missing, and the audit needs it"
+done
+command -v systemctl >/dev/null || die "systemctl is missing - this expects a systemd host"
+
+# ---------------------------------------------------------------------------
+# 2. Addressing. Offered, not chosen for you.
+
+say ""
+say "Addressing."
+say ""
+say "  Static in the guest is the only mode needing no DHCP rules on the"
+say "  hypervisor, so it keeps the rule set at four DROPs plus the exceptions."
+say "  It costs maintenance: the address is then asserted in two places."
+say ""
+say "  An address reserved for you on the router is one source of truth and"
+say "  survives a renumbering, but the guest still speaks DHCP and still needs"
+say "  both halves of the DHCP pair in proxmox/README.md."
+say ""
+ask pin "Pin this host to the address it already has? (y/N)" "N"
+case "$pin" in
+    [yY]*)
+        "$SRC/bin/dejima-devbox-static-ip" \
+            || die "addressing was left unchanged - fix the above and re-run"
+        ;;
+    *)
+        say ""
+        say "  Left as it is. If this host uses DHCP, add rules 2a and 6a from"
+        say "  proxmox/README.md. Both of them: the outbound one alone gets the"
+        say "  request out and the lease still never renews."
+        ;;
+esac
+
+# ---------------------------------------------------------------------------
+# 3. Config. One value, and it has to match a rule on the hypervisor.
+
+say ""
+say "The audit uses your forge as its positive control: if the forge answers,"
+say "packets are moving, so silence from the gateway means the firewall rather"
+say "than a broken network."
+say ""
+ask forge "Your forge's hostname" "$(cfg_get forge_host)"
+[ -n "$forge" ] || die "the audit has no positive control without this"
+
+case "$forge" in
+    *[!a-zA-Z0-9.-]*|-*|.*)
+        die "'$forge' is not a hostname - this wants a name, not a URL or an address" ;;
+esac
+
+if ! getent hosts "$forge" >/dev/null 2>&1; then
+    say ""
+    say "  WARNING: '$forge' does not resolve here."
+    say "  Continuing, because the resolver rule may not be in place yet. If it"
+    say "  still does not resolve after §3, the audit will report"
+    say "  INDETERMINATE rather than guessing."
+fi
+
+umask 022
+printf 'forge_host=%s\n' "$forge" > "$CONF_DIR/config.new"
+mv "$CONF_DIR/config.new" "$CONF_DIR/config"
+
+# ---------------------------------------------------------------------------
+# 4. Install the program and the units.
+#
+# The path below is written down in exactly one place. In the sister
+# repository it was written in two, they disagreed, and a timer that had never
+# worked on any host failed with 203/EXEC every time it fired without anyone
+# noticing for months.
+
+install -m 0755 "$SRC/bin/dejima-devbox-audit" "$BIN_DIR/dejima-devbox-audit"
+[ -x "$BIN_DIR/dejima-devbox-audit" ] \
+    || die "installed a file which is not executable: $BIN_DIR/dejima-devbox-audit"
+
+for u in "$SRC"/systemd/*; do
+    sed "s|@@BIN_DIR@@|$BIN_DIR|g" "$u" > "$UNIT_DIR/$(basename "$u")"
+done
+
+# Verify the substitution rather than trusting it. This is the check the
+# sister repository did not have.
+exe=$(sed -n 's|^ExecStart=\([^ ]*\).*|\1|p' "$UNIT_DIR/dejima-devbox-audit.service" | head -1)
+[ -n "$exe" ] || die "the installed unit has no ExecStart - refusing to enable it"
+[ -x "$exe" ] || die "unit names $exe, which is not executable - refusing to enable it"
+
+systemctl daemon-reload
+systemctl enable --now dejima-devbox-audit.timer
+
+# ---------------------------------------------------------------------------
+# 5. Run it once, so the first result is seen now rather than in a journal
+#    nobody opens.
+
+say ""
+say "Running the audit once."
+say ""
+"$BIN_DIR/dejima-devbox-audit" || true
+
+# ---------------------------------------------------------------------------
+# 6. What a guest cannot do for itself.
+
+say ""
+say "Still manual, and it cannot be otherwise:"
+say ""
+say "  The hypervisor firewall rules, in proxmox/README.md section 3. They are"
+say "  applied to this VM's tap device, on the node, which is what makes them"
+say "  worth having - a compromised guest cannot reach them, and neither can"
+say "  this program."
+say ""
+say "  Until they are applied, the audit above reports FAIL. That is correct."

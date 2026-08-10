@@ -17,4 +17,10 @@
 # places and are silent when they disagree: the audit reports INDETERMINATE,
 # which is correct and unhelpful.
 
+# Prefer a name over an address. Both work, but `getent hosts` on an address
+# is a reverse lookup, and a forge without a PTR record fails it - so the
+# resolution control quietly stops contributing and only the TCP probe remains.
+# Nothing breaks; the audit just has one fewer way to tell a filtered gateway
+# from a dead network.
+
 forge_host=forge.example.invalid
