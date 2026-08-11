@@ -100,6 +100,14 @@ with your personal key. The difference shows up exactly once, on the day the box
 is owned: a scoped token is revoked and reissued, and a personal key is every
 repository and every host that trusts it.
 
+**Do not give a session push access to a forge it is not being used to push
+to.** A session's forge is the one you chose; everywhere else is where its
+dependencies and its reading live. dejima blocks GitHub push by default for
+that reason and states the argument in full, including what an unsolicited pull
+request costs the people receiving it, at [GitHub push: blocked by
+default](https://gitbox.branderson.io/dejima/dejima/src/branch/main/docs/security.md#github-push-blocked-by-default-optional-opt-in).
+It is not restated here, so that there is one copy of it to keep right.
+
 **Do not forward your agent in.** `ssh -A` lends this VM your keys for the life
 of the session, and this is a VM whose threat model says it may be owned. In
 your SSH config, for this host:
