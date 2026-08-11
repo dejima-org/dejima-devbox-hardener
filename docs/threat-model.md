@@ -1,5 +1,11 @@
 # Threat model
 
+**And none of it has been reviewed by anyone else.** This is early development:
+the reasoning here is one person's, the tests assert what that person thought to
+check, and no outside audit or adversarial testing has happened. Read what
+follows as claims awaiting scrutiny rather than claims that have survived it.
+See [SECURITY.md](../SECURITY.md).
+
 What this defends, what it does not, and which options were rejected on
 purpose. The last section matters most: it exists so a decision can be
 overturned on new information rather than re-argued from nothing.
