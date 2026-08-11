@@ -33,6 +33,8 @@ you what that bound actually is.
 a fix, not a release. [SECURITY.md](SECURITY.md) has the detail, and is where to
 report a vulnerability rather than in a public issue.
 
+[![Developed in dejima](assets/dejima-badge.svg)](https://gitbox.branderson.io/dejima/dejima)
+
 ## What a devbox is, and why it is a different problem
 
 A devbox is a long-lived VM that runs [dejima](https://gitbox.branderson.io/dejima/dejima)
