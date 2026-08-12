@@ -285,17 +285,31 @@ once, in one place, and cannot drift between hosts.
 **Order matters within the group, and it is the one thing here that is easy to
 get wrong.**
 Rules are evaluated top to bottom and the first match wins. Your forge and
-your resolver are *inside* the ranges rules 5–8 drop, so if either pinhole
+your resolver are *inside* the ranges rules 7–10 drop, so if either pinhole
 ends up below them it is dead and the VM cannot reach the forge or resolve
-anything. The console appends new rules at the bottom, so adding them in the
-order above is all it takes — but check the list afterwards, and drag rows if
-they are out of sequence.
+anything.
 
-Rules 2–4 are the entire remaining LAN exposure, and they are why "no LAN
-access" is not literally true. Both destinations are pinned to one host and
-one port.
+**The console inserts each new rule at the TOP of the list, not the bottom.** So
+entering the rules in the order they are written above leaves you with them in
+reverse: the four DROPs on top, every pinhole beneath them, and a devbox that
+cannot reach its forge. Following the table without watching the list is enough
+to produce exactly the failure this section is warning about.
 
-Nothing follows rule 8. The public internet is reached by the default policy.
+Two ways through it. **Drag each rule to the bottom as you add it**, which keeps
+the list matching the table at every step and is the easier one to check. Or
+enter them in reverse, from the last row up to the first, and let the insertions
+stack into the right order — quicker, and you are reading the table backwards
+while doing it, which is its own way to get one wrong.
+
+Either way, **read the finished list top to bottom and compare it against the
+table** before you trust it. Nothing else catches this: a dead pinhole looks
+exactly like a working firewall until something tries to reach the forge.
+
+Rules 3–6 are the entire remaining LAN exposure, and they are why "no LAN
+access" is not literally true. Both destinations are pinned to one host, on
+the ports named.
+
+Nothing follows rule 10. The public internet is reached by the default policy.
 
 ### Values that must agree
 
