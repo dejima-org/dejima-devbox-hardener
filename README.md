@@ -39,6 +39,13 @@ being wrong about it would matter.
 a fix, not a release. [SECURITY.md](SECURITY.md) has the detail, and is where to
 report a vulnerability rather than in a public issue.
 
+**One person's work per devbox.** A condition of the tool rather than an
+observation about how devboxes get used: the blast radius here is stated in
+terms of what is on the box, so a machine holding several people's work is out
+of spec and the reasoning in
+[docs/threat-model.md](docs/threat-model.md#what-this-tool-assumes) does not hold
+for it. If you need separation between people, use a devbox each.
+
 [![Developed in dejima](assets/dejima-badge.svg)](https://gitbox.branderson.io/dejima/dejima)
 
 ## What a devbox is, and why it is a different problem
@@ -64,10 +71,11 @@ layer grants is [docs/threat-model.md](docs/threat-model.md), including the
 [blast radius by layer](docs/threat-model.md#blast-radius-by-layer) and the
 options that were [rejected, with reasons](docs/threat-model.md#rejected-with-reasons).
 
-Container escape is deliberately deprioritised, and the reasoning is written
-down rather than assumed: an escape would land in an account holding less than
-the session already had, so
-[patching is the proportionate response](docs/threat-model.md#why-container-escape-is-deprioritised).
+Container escape is deliberately deprioritised. An escape gains root, which is
+more than the container has, and root on this VM is already a row in that table,
+bounded by the same hypervisor firewall however it was reached. So
+[patching is what is left worth doing](docs/threat-model.md#why-container-escape-is-deprioritised),
+and separating escape from root inside the guest is not.
 
 ## Two halves
 

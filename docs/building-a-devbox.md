@@ -123,12 +123,43 @@ is often enabled globally years earlier and never thought about again.
 `dejima-devbox-audit radius` lists what is currently reachable here, so run it
 once after this section and see whether the list is shorter than it was.
 
+### The one you cannot move
+
+**The model API credential stays on this box, and nothing in this runbook
+changes that.**
+
+dejima keeps it out of the container on purpose: `~/.claude/.credentials.json`
+is never mounted, and a host-side proxy holds the real token while the container
+sees a placeholder. So a compromised *session* can use the API while it runs but
+cannot walk off with the credential.
+
+The proxy has to read that file, and the proxy runs here. Anything with root on
+this devbox has it, and that is the step which turns "can use the API until this
+session ends" into "holds the token and can use it from anywhere, afterwards".
+
+There is no configuration in this repository that helps. What is left is the
+ordinary answer for a credential you cannot remove: know it is there, and know
+what to do if the box is ever suspect. **Rotate it** - sign out and back in on
+the host, which replaces the stored token - and treat it as the first thing to
+rotate rather than an afterthought.
+
+It is not the only thing here whose loss would reach past this machine. Source,
+uncommitted work, notes, anything else in the filesystem can be copied out too,
+and some of that matters as much. Two things put this one first in the queue
+anyway. It is a **standing capability rather than a copy of data**: what leaves
+with it is the ability to keep acting as you afterwards, not a snapshot of what
+was there at the time. And it sits at a **known path with a known name**, which
+makes it one of the easiest things on the box to find and among the first a
+prompt injection or a supply-chain payload would go looking for.
+
 ## 7. Keep the kernel and the runtime patched
 
-This is the whole of the response to container escape, and it is deliberate.
-[The threat model](threat-model.md#why-container-escape-is-deprioritised)
-explains why nothing structural is done about it: an escape would land in an
-account that holds less than the session already had.
+This is the whole of the response to container escape, and it is deliberate. An
+escape gets root, which is more than the container had, and root on this VM is
+already inside the boundary the node runbook's §3 draws - a boundary that holds
+however root was reached. [The threat
+model](threat-model.md#why-container-escape-is-deprioritised) has the reasoning
+in full.
 
 ```sh
 sudo apt install unattended-upgrades
