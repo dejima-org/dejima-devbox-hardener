@@ -380,7 +380,42 @@ cmd_radius() {
     return 0
 }
 
+# This program describes the machine it runs on. Run inside a container it
+# describes the container, and every reading is real: the gateway is the
+# bridge, the credential is whatever is mounted here, the group memberships
+# are the image's. None of it is about the devbox, and nothing in the output
+# would say so.
+#
+# DETECTED rather than declared, which is the opposite of test/devbox.bats, and
+# the difference is the direction each one fails in. A test that mis-detects
+# skips and reports nothing, so it takes a declared variable. This mis-detects
+# and prints one extra paragraph. Loud and wrong is cheap; quiet and wrong is
+# the thing worth avoiding.
+in_container() {
+    [ -f /.dockerenv ] && return 0
+    [ -f /run/.containerenv ] && return 0
+    grep -qaE 'docker|libpod|containerd' /proc/1/cgroup 2>/dev/null && return 0
+    return 1
+}
+
+# Warn, do not refuse. Someone reading the program's output while developing it
+# has a good reason to be here, and refusing would only teach them to work
+# around the check.
+container_warning() {
+    in_container || return 0
+    say "$PROG: this looks like a container, not a devbox."
+    say ""
+    say "  What follows describes this container. The gateway probed is the"
+    say "  container's own, any credential found is what is mounted here, and"
+    say "  the verdict is about the container's egress rather than the VM's."
+    say ""
+    say "  For a reading about the devbox, install this with"
+    say "  dejima-devbox-bootstrap and run it there. Continuing anyway."
+    say ""
+}
+
 main() {
+    container_warning
     case "${1:-all}" in
         reach)  cmd_reach ;;
         radius) cmd_radius ;;

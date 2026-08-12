@@ -293,3 +293,39 @@ setup() {
     [[ "$output" != *TOKENMATERIAL* ]]
     [[ "$output" == *"cannot be moved off"* ]]
 }
+
+# --- wrong machine ----------------------------------------------------------
+
+@test "running in a container says so before reporting anything" {
+    in_container() { return 0; }
+    run main radius
+    [[ "$output" == *"container, not a devbox"* ]]
+}
+
+@test "the warning comes before the findings, not after them" {
+    # After the report it is a footnote on conclusions already drawn.
+    in_container() { return 0; }
+    run main radius
+    warn=$(printf '%s\n' "$output" | grep -n "container, not a devbox" | head -1 | cut -d: -f1)
+    first=$(printf '%s\n' "$output" | grep -n "What root on this VM would get" | head -1 | cut -d: -f1)
+    [ -n "$warn" ] && [ -n "$first" ]
+    [ "$warn" -lt "$first" ]
+}
+
+@test "it warns rather than refusing, so a deliberate run still works" {
+    in_container() { return 0; }
+    run main radius
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"What root on this VM would get"* ]]
+}
+
+@test "on a devbox the banner does not appear" {
+    # Matched on the banner's own wording, not on the word "container": the
+    # report says that legitimately in several places, and a test keyed to it
+    # would fail for reasons that have nothing to do with this.
+    in_container() { return 1; }
+    HOME="$BATS_TEST_TMPDIR"
+    run main radius
+    [[ "$output" != *"this looks like a container"* ]]
+    [[ "$output" == *"What root on this VM would get"* ]]
+}
