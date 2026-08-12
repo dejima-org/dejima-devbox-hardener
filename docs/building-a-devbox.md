@@ -4,10 +4,17 @@ The guest-side half. Everything here happens inside the VM and is the same on
 any hypervisor.
 
 The node-side half is [proxmox/README.md](../proxmox/README.md): creating the
-VM and applying the firewall to it. **Do that page first, through the end of
-its §3, then come back here.** The two halves are separate documents so that
-another hypervisor can be added later without touching a single guest-side
+VM and applying the firewall to it. The two halves are separate documents so
+that another hypervisor can be added later without touching a single guest-side
 step.
+
+**They interleave rather than running one after the other**, and that page's
+[order section](../proxmox/README.md#what-order-to-do-this-in) is the
+authoritative version. In short: do its §1 and §2, come here for §1 below and
+install the OS, go back for its §3, then return here and carry on from §2.
+
+The reason is that the node firewall's rules are checked from inside the VM,
+and there is nothing to check from until an OS is running.
 
 ---
 

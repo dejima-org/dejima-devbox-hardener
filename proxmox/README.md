@@ -56,6 +56,33 @@ each layer actually grants.
 
 ---
 
+## What order to do this in
+
+This page and the guest runbook interleave. Doing them strictly in sequence
+does not work, and the reason is worth knowing before you hit it.
+
+1. **§1 and §2 here.** Datacenter firewall on, VM created.
+2. **[Install the OS](../docs/building-a-devbox.md#1-install-debian)**, then
+   come back. That is the guest runbook's §1 and it is the only part of it you
+   need before returning.
+3. **§3 here.** Build the rules and apply them. Both halves of its verification
+   work at this point, including the ones run from inside the VM.
+4. **[The rest of the guest runbook](../docs/building-a-devbox.md#2-addressing-leave-it-on-dhcp-for-now)**,
+   from its §2 onward.
+5. **§4 here** whenever you want a snapshot.
+
+**The rules go on after the OS is installed, not before**, and that ordering is
+load-bearing rather than a matter of taste. The Debian installer takes its
+address by DHCP whatever you intend to pin it to afterwards, and a lease needs
+a reply back in. Apply the group first without the DHCP pair from §3 and the
+installer simply has no network, which presents as a broken mirror or a dead
+link and not as a firewall you switched on ten minutes earlier.
+
+Ticking the Firewall checkbox in §2 is safe on its own. It is the group and the
+policies in §3 that start dropping things.
+
+---
+
 ## 1. Check the datacenter firewall is on
 
 **Do this first.** A per-VM firewall with the datacenter switch off is read
@@ -111,6 +138,19 @@ means a changed lease breaks nothing in the rule set.
 
 What it breaks is you finding the machine: `ssh <you>@<vm-ip>`, and every
 later visit. That is reason enough to pin it.
+
+---
+
+## Now install the OS, then come back
+
+The VM exists and has no operating system. Go to
+**[docs/building-a-devbox.md §1](../docs/building-a-devbox.md#1-install-debian)**,
+install Debian, and return here for §3.
+
+Nothing else from the guest runbook is needed yet. Coming back with a booted VM
+is what makes the rest of this page checkable rather than assumed: §3 ends by
+testing the rules from inside, and there is nothing to test from until an OS is
+running.
 
 ---
 
@@ -421,6 +461,20 @@ Read the four together, because the pattern says which thing is wrong:
 [`bin/dejima-devbox-audit`](../bin/dejima-devbox-audit) runs the same checks,
 tells the three outcomes apart properly, and a timer re-runs it. Rules get
 edited, and a rule widened by accident has no symptom on this VM at all.
+
+---
+
+## The node side is done. Go back to the guest.
+
+Everything above is what a hypervisor does and a guest cannot. The rest is
+inside the VM: pinning the addressing, installing the audit and its timer,
+keeping credentials off the box, and patching.
+
+**Continue at [docs/building-a-devbox.md §2](../docs/building-a-devbox.md#2-addressing-leave-it-on-dhcp-for-now).**
+
+Come back here only for §4, when you want a snapshot. If you added the DHCP
+rules and later pin the address in the guest, you can drop them then - that is
+the one thing on this page the guest runbook can change.
 
 ---
 
