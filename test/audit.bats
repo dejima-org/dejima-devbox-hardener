@@ -389,3 +389,51 @@ setup() {
     [[ "$output" != *"this looks like a container"* ]]
     [[ "$output" == *"What root on this VM would get"* ]]
 }
+
+# --- whose home is inventoried ----------------------------------------------
+#
+# The radius report runs as root, from a timer or under sudo, where $HOME is
+# root's. Everything it is about lives in the account that runs dejima. Getting
+# this wrong does not print an error - it prints "none found", on a box full of
+# credentials.
+
+@test "the account bootstrap recorded decides which home is inventoried" {
+    CONF_DIR="$BATS_TEST_TMPDIR/conf"; mkdir -p "$CONF_DIR"
+    printf 'forge_host=forge.example.invalid\ndevbox_user=dev\n' > "$CONF_DIR/config"
+    getent() { printf 'dev:x:1000:1000::/home/dev:/bin/bash\n'; }
+    run devbox_home
+    [ "$output" = /home/dev ]
+}
+
+@test "no recorded account falls back to this process's home" {
+    # A host bootstrapped before the key existed reports what it always did,
+    # rather than this guessing at /home/*.
+    CONF_DIR="$BATS_TEST_TMPDIR/conf"; mkdir -p "$CONF_DIR"
+    printf 'forge_host=forge.example.invalid\n' > "$CONF_DIR/config"
+    HOME=/home/whoever
+    run devbox_home
+    [ "$output" = /home/whoever ]
+}
+
+@test "a recorded account that no longer exists falls back rather than emptying" {
+    CONF_DIR="$BATS_TEST_TMPDIR/conf"; mkdir -p "$CONF_DIR"
+    printf 'devbox_user=deleted\n' > "$CONF_DIR/config"
+    getent() { return 2; }
+    HOME=/home/whoever
+    run devbox_home
+    [ "$output" = /home/whoever ]
+}
+
+@test "the report inventories that account's credentials, not root's" {
+    # The failure this exists for: root's home is empty on a devbox, so the
+    # report read "none found" while the credentials sat one directory over.
+    CONF_DIR="$BATS_TEST_TMPDIR/conf"; mkdir -p "$CONF_DIR"
+    printf 'devbox_user=dev\n' > "$CONF_DIR/config"
+    mkdir -p "$BATS_TEST_TMPDIR/dev/.ssh"
+    printf 'private\n' > "$BATS_TEST_TMPDIR/dev/.ssh/id_ed25519"
+    getent() { printf 'dev:x:1000:1000::%s:/bin/bash\n' "$BATS_TEST_TMPDIR/dev"; }
+    HOME="$BATS_TEST_TMPDIR/root"; mkdir -p "$HOME"
+    run cmd_radius
+    [[ "$output" == *"$BATS_TEST_TMPDIR/dev/.ssh/id_ed25519"* ]]
+    [[ "$output" != *"none found"* ]]
+}

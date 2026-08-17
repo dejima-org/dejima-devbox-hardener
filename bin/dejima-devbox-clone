@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Brad Anderson
+#
+# Puts dejima's source at ~/dejima, and stops there.
+#
+# It does not run dejima's install.sh. That step writes into ~/.claude,
+# ~/.local/bin and ~/.config/dejima - the operator's own account rather than
+# this VM's plumbing - and what it does there is dejima's decision to make and
+# to change. This repository hardens the machine dejima runs on. Running the
+# other project's installer from inside it would put a copy of that project's
+# setup contract here, where it would go stale without anything noticing.
+#
+# What it does remove is the awkward part of the order. Source has to arrive
+# over a network that is about to be locked down, and fetching it after the
+# node rules go on is a clone against a firewall rather than a clone.
+#
+# Run as the person who will use dejima. The checkout is theirs, and a clone
+# made by root leaves them a directory they cannot write to.
+
+set -euo pipefail
+
+PROG=${0##*/}
+DEJIMA_URL=${DEJIMA_URL:-https://gitbox.branderson.io/dejima/dejima.git}
+DEJIMA_DIR=${DEJIMA_DIR:-$HOME/dejima}
+
+die() { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
+say() { printf '%s\n' "$*" >&2; }
+
+if [ $# -gt 1 ]; then
+    die "usage: $PROG [url]"
+elif [ $# -eq 1 ]; then
+    DEJIMA_URL=$1
+fi
+
+command -v git >/dev/null 2>&1 || die "git is missing, and there is no clone without it"
+
+# An existing directory is never modified, whatever is in it. Pulling into a
+# checkout somebody has been working in is not this program's business, and a
+# directory that is not a checkout at all is far more likely to be something
+# they want than something to clone over.
+if [ -e "$DEJIMA_DIR" ]; then
+    if [ -d "$DEJIMA_DIR/.git" ]; then
+        say "  dejima     already at $DEJIMA_DIR, left as it is"
+        say "             $(git -C "$DEJIMA_DIR" remote get-url origin 2>/dev/null || echo 'no origin remote')"
+        exit 0
+    fi
+    # An empty directory is not a conflict. git clones into one, and an
+    # operator who made the directory first meant this.
+    if [ -n "$(ls -A "$DEJIMA_DIR" 2>/dev/null)" ]; then
+        die "$DEJIMA_DIR exists and is not a dejima checkout - move it, or set DEJIMA_DIR"
+    fi
+fi
+
+git clone -q "$DEJIMA_URL" "$DEJIMA_DIR" \
+    || die "could not clone $DEJIMA_URL into $DEJIMA_DIR"
+
+say "  dejima     cloned into $DEJIMA_DIR"
+say "             $(git -C "$DEJIMA_DIR" log -1 --format='%h %s' 2>/dev/null || true)"

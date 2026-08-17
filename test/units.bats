@@ -54,3 +54,16 @@ setup() {
     # And refuses to finish if what it wrote is not executable.
     grep -q 'which is not executable' "$REPO/bin/dejima-devbox-bootstrap"
 }
+
+@test "every program in bin/ is executable" {
+    # Not theoretical: bin/dejima-devbox-clone was committed without the bit
+    # and every caller got 126 with a message about permissions rather than
+    # about the program. bootstrap installs the audit with `install -m 0755`,
+    # which hides this for that one file and for no other - the rest are run
+    # straight out of the checkout.
+    progs=("$REPO"/bin/*)
+    [ -f "${progs[0]}" ] || { echo "no programs in bin/"; false; }
+    for p in "${progs[@]}"; do
+        [ -x "$p" ] || { echo "not executable: $p"; false; }
+    done
+}

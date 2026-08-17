@@ -23,6 +23,8 @@ BIN_DIR=${BIN_DIR:-/usr/local/sbin}
 CONF_DIR=${CONF_DIR:-/etc/dejima-devbox}
 UNIT_DIR=${UNIT_DIR:-/etc/systemd/system}
 
+docker_group_added=0
+
 die() { echo "$PROG: $*" >&2; exit 1; }
 say() { printf '%s\n' "$*" >&2; }
 
@@ -56,8 +58,184 @@ for c in ip timeout getent stat find; do
 done
 command -v systemctl >/dev/null || die "systemctl is missing - this expects a systemd host"
 
+# Checked here rather than met at the point of use. apt-get failing halfway
+# through leaves a host that is part configured, and runuser failing after that
+# leaves one with Docker installed and no dejima on it.
+for c in apt-get usermod runuser; do
+    command -v "$c" >/dev/null || die "$c is missing - this expects a Debian host"
+done
+
 # ---------------------------------------------------------------------------
-# 2. Addressing. Offered, not chosen for you.
+# 2. Whose devbox this is.
+#
+# dejima runs as a person and not as root: it mounts their project, writes
+# their ~/.claude, and holds their credentials. This program runs as root, so
+# the two have to be told apart before anything is installed for either of
+# them. Guessing wrong puts the checkout in /root and the group on nobody.
+
+target_user=${SUDO_USER:-}
+if [ -z "$target_user" ] || [ "$target_user" = root ]; then
+    say ""
+    ask target_user "Which account will run dejima?" "$(cfg_get devbox_user)"
+fi
+[ -n "$target_user" ] || die "no account named, and dejima does not run as root"
+# The || true is load-bearing under `set -e` with pipefail: getent exits
+# non-zero on an unknown account, which would end the script here on the raw
+# status rather than on the line below saying which name failed.
+target_home=$(getent passwd "$target_user" | cut -d: -f6) || true
+[ -n "$target_home" ] || die "no such account: $target_user"
+
+# ---------------------------------------------------------------------------
+# 3. What dejima needs from the host.
+#
+# Before the addressing step, and before anything is locked down, because this
+# and the clone below are the two things here that need the network - and the
+# addressing step is the one thing here that can take it away.
+#
+# docker.io from Debian rather than Docker's own repository: one less
+# third-party apt source on a machine whose value is a small, known surface.
+# What matters here is what the daemon is allowed to reach, which is decided
+# on the hypervisor and not by a version number.
+
+say ""
+say "Installing what dejima needs..."
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+# docker-cli named explicitly alongside docker.io. Debian splits the client
+# from the daemon, and --no-install-recommends - otherwise right on a machine
+# whose value is a small surface - drops it. apt then reports success, the
+# daemon is installed, and there is no `docker` command at all.
+#
+# python3 and jq are dejima's own prerequisites: the host-side credential proxy
+# is python3, and its installer reads settings.json with jq. git is here for
+# the clone below.
+apt-get install -y -qq --no-install-recommends \
+    docker.io docker-cli \
+    python3 jq git ca-certificates curl
+
+if ! command -v docker >/dev/null 2>&1; then
+    {
+        printf '%s: docker installed but there is no `docker` command.\n\n' "$PROG"
+        printf 'What dpkg has:\n'
+        dpkg -l 2>/dev/null | awk '/docker/ {printf "  %s %s %s\n", $1, $2, $3}'
+        printf '\nDebian splits the client from the daemon. If docker.io is installed\n'
+        printf 'and docker-cli is not, that is this - install it and re-run.\n'
+    } >&2
+    exit 1
+fi
+say "  docker     $(docker --version 2>&1 | head -1)"
+
+# Compose, by whatever route this release actually offers.
+#
+# The package is docker-compose-v2 from trixie onward and does not exist on
+# bookworm, so naming it in the list above aborts the whole bootstrap on Debian
+# 12. Detecting and shrugging is not much better: dejima launches every session
+# through `docker compose run`, so a devbox without compose is a devbox that
+# cannot run a session. Try each route that exists, in order of how much it
+# adds to the machine, and stop at the first that works.
+have_compose() { docker compose version >/dev/null 2>&1; }
+. /etc/os-release
+codename="${VERSION_CODENAME:-}"
+
+if have_compose; then
+    say "  compose    already present"
+else
+    # 1. The distribution's own package, where it exists.
+    if apt-cache show docker-compose-v2 2>/dev/null | grep -q '^Package:'; then
+        say "  compose    installing docker-compose-v2 from $codename"
+        apt-get install -y -qq --no-install-recommends docker-compose-v2 || true
+    fi
+
+    # 2. Backports, which is still Debian and still signed by Debian.
+    if ! have_compose && [ -n "$codename" ]; then
+        say "  compose    no distribution package on $codename; trying backports"
+        printf 'deb http://deb.debian.org/debian %s-backports main\n' "$codename" \
+            > /etc/apt/sources.list.d/backports.list
+        apt-get update -qq || true
+        apt-get install -y -qq --no-install-recommends \
+            -t "$codename-backports" docker-compose-v2 || true
+        if ! have_compose; then
+            # Remove the source AND refresh, or apt keeps a list referring to
+            # something that is no longer configured.
+            rm -f /etc/apt/sources.list.d/backports.list
+            apt-get update -qq || true
+        fi
+    fi
+
+    # 3. Docker's own repository. Last because it is a third-party apt source
+    #    on a machine whose value is a small, known surface - worth saying out
+    #    loud rather than adding quietly.
+    if ! have_compose; then
+        say ""
+        say "  compose    not available from Debian on $codename."
+        say "             Adding Docker's official apt repository to get"
+        say "             docker-compose-plugin. This is a third-party source on"
+        say "             a host built to have few; the alternative is no"
+        say "             compose, and no way to launch a session."
+        say ""
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/debian/gpg \
+            -o /etc/apt/keyrings/docker.asc || die "could not fetch Docker's signing key"
+        chmod a+r /etc/apt/keyrings/docker.asc
+        printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian %s stable\n' \
+            "$(dpkg --print-architecture)" "$codename" \
+            > /etc/apt/sources.list.d/docker.list
+        apt-get update -qq
+        apt-get install -y -qq --no-install-recommends docker-compose-plugin || true
+    fi
+
+    if ! have_compose; then
+        {
+            printf '%s: docker compose v2 is not usable.\n\n' "$PROG"
+            printf 'What is on disk:\n'
+            for d in /usr/libexec/docker/cli-plugins /usr/lib/docker/cli-plugins \
+                     /usr/local/lib/docker/cli-plugins /usr/local/libexec/docker/cli-plugins; do
+                [ -d "$d" ] && ls -1 "$d" 2>/dev/null | sed "s|^|  $d/|"
+            done
+            printf '  docker CLI: %s\n\n' "$(docker --version 2>&1 | head -1)"
+            printf 'If a docker-compose binary is listed above then the package did\n'
+            printf 'install, and the CLI searches these directories by default - so\n'
+            printf 'report what you see rather than assuming a download failure. If\n'
+            printf 'nothing is listed, no route produced one, which on a working network\n'
+            printf 'usually means this host cannot reach download.docker.com.\n\n'
+            printf 'Re-run once resolved; this script is idempotent and everything before\n'
+            printf 'this point is already done.\n'
+        } >&2
+        exit 1
+    fi
+    say "  compose    $(docker compose version 2>/dev/null | head -1)"
+fi
+
+systemctl enable --now docker >/dev/null 2>&1 || true
+
+# The docker group is root on this VM, in one command and with no exploit:
+# `docker run -v /:/host --privileged`. Granted anyway, because dejima drives
+# the daemon as this account and the alternative is a session that launches
+# only under sudo. docs/threat-model.md treats it as a grant rather than a
+# lapse, and the blast radius there is written assuming it.
+if id -nG "$target_user" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
+    say "  group      $target_user is already in the docker group"
+else
+    usermod -aG docker "$target_user"
+    say "  group      added $target_user to the docker group"
+    docker_group_added=1
+fi
+
+# ---------------------------------------------------------------------------
+# 4. dejima's source, while the network is still open.
+
+# DEJIMA_DIR passed explicitly rather than left to $HOME. runuser resets HOME
+# for the target user, but this program is also reachable under sudo and one
+# `-m` or one preserved environment away from cloning into /root - which is a
+# checkout the person who needs it cannot write to, in a place they will not
+# look. State the path; it costs one word.
+say ""
+runuser -u "$target_user" -- env DEJIMA_DIR="$target_home/dejima" \
+    "$SRC/bin/dejima-devbox-clone" \
+    || die "dejima was not cloned - fix the above and re-run"
+
+# ---------------------------------------------------------------------------
+# 5. Addressing. Offered, not chosen for you.
 
 say ""
 say "Addressing."
@@ -85,7 +263,7 @@ case "$pin" in
 esac
 
 # ---------------------------------------------------------------------------
-# 3. Config. One value, and it has to match a rule on the hypervisor.
+# 6. Config. Two values, and one of them has to match a rule on the hypervisor.
 
 say ""
 say "The audit uses your forge as its positive control: if the forge answers,"
@@ -108,12 +286,16 @@ if ! getent hosts "$forge" >/dev/null 2>&1; then
     say "  INDETERMINATE rather than guessing."
 fi
 
+# The account is recorded because the audit needs it too. Its radius report
+# runs as root, from a timer or under sudo, and $HOME there is root's - so
+# without this it would inventory an empty home and report no credentials on a
+# box full of them.
 umask 022
-printf 'forge_host=%s\n' "$forge" > "$CONF_DIR/config.new"
+printf 'forge_host=%s\ndevbox_user=%s\n' "$forge" "$target_user" > "$CONF_DIR/config.new"
 mv "$CONF_DIR/config.new" "$CONF_DIR/config"
 
 # ---------------------------------------------------------------------------
-# 4. Install the program and the units.
+# 7. Install the program and the units.
 #
 # The path below is written down in exactly one place. In the sister
 # repository it was written in two, they disagreed, and a timer that had never
@@ -138,7 +320,7 @@ systemctl daemon-reload
 systemctl enable --now dejima-devbox-audit.timer
 
 # ---------------------------------------------------------------------------
-# 5. Run it once, so the first result is seen now rather than in a journal
+# 8. Run it once, so the first result is seen now rather than in a journal
 #    nobody opens.
 
 say ""
@@ -148,7 +330,7 @@ audit_rc=0
 "$BIN_DIR/dejima-devbox-audit" || audit_rc=$?
 
 # ---------------------------------------------------------------------------
-# 6. Where this leaves the host.
+# 9. Where this leaves the host.
 #
 # Exits 0 either way. What this program installs is in the guest, and it either
 # installed or died earlier; the audit's subject is the hypervisor, which is
@@ -175,4 +357,26 @@ else
     say ""
     say "  Those rules are applied to this VM's tap device, on the node. Nothing"
     say "  in the guest can apply them, and this program cannot either."
+fi
+
+# The handoff. Everything above this point is the machine; everything below it
+# belongs to dejima, and the boundary is deliberate - see bin/dejima-devbox-clone
+# for why the source is fetched here and installed there.
+say ""
+say "dejima is at $target_home/dejima, not installed:"
+say ""
+say "    cd $target_home/dejima && ./install.sh"
+say ""
+say "  Run it as $target_user, not as root. It writes into that account:"
+say "  the CLIs into ~/.local/bin, the hooks into ~/.claude/hooks, and a"
+say "  starter ~/.config/dejima/config. Put ~/.local/bin on your PATH."
+say ""
+say "  dejima's own README covers what comes after: a forge, a workflow and a"
+say "  push credential. A fresh config pushes nowhere until you choose one."
+if [ "$docker_group_added" = 1 ]; then
+    say ""
+    say "  Log out and back in first. $target_user was added to the docker group"
+    say "  just now, and a shell that was already open does not have it - which"
+    say "  reads as docker being broken rather than as a group that has not"
+    say "  taken effect yet."
 fi
