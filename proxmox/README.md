@@ -373,11 +373,6 @@ server {
 }
 ```
 
-No `http2` here, in either form. It is spelled `listen ... ssl http2;` before
-nginx 1.25.1 and `http2 on;` from 1.25.1, so whichever you write is a startup
-error on the other side of that line, and ntfy needs neither. Copy the `listen`
-line from a vhost that already works on this server if you want it.
-
 **A dedicated address**, if you would rather every client kept the same URL. Add
 a second IP to the proxy, bind ntfy to it, point the DNS record at it, and open
 443 on that address only.
