@@ -73,7 +73,7 @@ One command. There is no separate install step.
 
 It checks its prerequisites, offers to pin the addressing, asks for your forge's
 hostname, installs the audit with its timer, runs the audit once, and then tells
-you what it could not do for you.
+you where that result leaves the host.
 
 **Expect it to report FAIL the first time**, unless you have already applied the
 node firewall. That is correct: nothing is contained yet.

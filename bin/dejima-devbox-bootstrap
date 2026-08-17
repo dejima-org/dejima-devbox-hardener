@@ -144,17 +144,35 @@ systemctl enable --now dejima-devbox-audit.timer
 say ""
 say "Running the audit once."
 say ""
-"$BIN_DIR/dejima-devbox-audit" || true
+audit_rc=0
+"$BIN_DIR/dejima-devbox-audit" || audit_rc=$?
 
 # ---------------------------------------------------------------------------
-# 6. What a guest cannot do for itself.
+# 6. Where this leaves the host.
+#
+# Exits 0 either way. What this program installs is in the guest, and it either
+# installed or died earlier; the audit's subject is the hypervisor, which is
+# configured after this runs on the documented order, so a FAIL here is the
+# expected reading rather than an install that went wrong.
+#
+# What would be wrong is saying the same thing in both cases. This printed a
+# fixed closing paragraph explaining that the audit reports FAIL until the node
+# rules are applied, which on a host where they already were contradicted the
+# PASS three lines above it.
 
 say ""
-say "Still manual, and it cannot be otherwise:"
-say ""
-say "  The hypervisor firewall rules, in proxmox/README.md section 3. They are"
-say "  applied to this VM's tap device, on the node, which is what makes them"
-say "  worth having - a compromised guest cannot reach them, and neither can"
-say "  this program."
-say ""
-say "  Until they are applied, the audit above reports FAIL. That is correct."
+if [ "$audit_rc" -eq 0 ]; then
+    say "Installed, and the hypervisor rules are in force."
+    say "The timer re-checks them hourly."
+else
+    say "Installed. The audit did not pass."
+    say ""
+    say "  If the hypervisor firewall is not applied yet, this is the expected"
+    say "  reading at this point in the runbook. Apply proxmox/README.md"
+    say "  section 3, then run:"
+    say ""
+    say "    $BIN_DIR/dejima-devbox-audit reach"
+    say ""
+    say "  Those rules are applied to this VM's tap device, on the node. Nothing"
+    say "  in the guest can apply them, and this program cannot either."
+fi
