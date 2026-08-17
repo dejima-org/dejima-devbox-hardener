@@ -107,6 +107,24 @@ The line is deliberate. This repository hardens the machine dejima runs on, and
 what `install.sh` does to your account is dejima's to define and to change; a
 copy of that contract kept here would go stale without anything noticing.
 
+### If you want notifications, they need a rule on the node
+
+dejima's notifications go to an ntfy server, and an ntfy server on your own
+network is one of the things the node firewall drops. Without a rule for it the
+posts go nowhere and say nothing about it: no error in the session, no delivery,
+and a feature that looks like it is switched off.
+
+The rule is [one more, if you want dejima's
+notifications](../proxmox/README.md#one-more-if-you-want-dejimas-notifications),
+and it is worth reading in full before adding it rather than after. **The
+obvious version of that rule gives this VM every service on your reverse
+proxy**, because the firewall matches an address and a port and cannot see which
+name the request was for. That widening is invisible from here: the audit keeps
+reporting `PASS`, because the gateway it probes is still dropped.
+
+If the notify service runs inside the container, dejima's own allowlist needs
+the server's name as well. The two lists are separate and both apply.
+
 ## 6. Verify
 
 ```sh
