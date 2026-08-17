@@ -342,7 +342,6 @@ that no other client uses.
 # server block here becomes reachable from the devbox.
 server {
     listen <proxy-ip>:8443 ssl;
-    http2 on;
     server_name ntfy.example.com;
 
     ssl_certificate     /etc/ssl/ntfy/fullchain.pem;
@@ -373,6 +372,11 @@ server {
     return 444;
 }
 ```
+
+No `http2` here, in either form. It is spelled `listen ... ssl http2;` before
+nginx 1.25.1 and `http2 on;` from 1.25.1, so whichever you write is a startup
+error on the other side of that line, and ntfy needs neither. Copy the `listen`
+line from a vhost that already works on this server if you want it.
 
 **A dedicated address**, if you would rather every client kept the same URL. Add
 a second IP to the proxy, bind ntfy to it, point the DNS record at it, and open
@@ -418,12 +422,15 @@ and no read access to anything, so a compromised devbox can post noise and
 cannot read the notifications your other clients are getting. That is the half
 of this the firewall has no way to express.
 
-##### The container's allowlist is a separate list
+##### Where the notify service runs, and why that matters here
 
-dejima's own egress allowlist lives inside the container and knows nothing about
-this page. If the notify service runs there rather than on the VM, the server's
-name has to be allowed in dejima as well, and both are needed: the node rule
-lets the VM reach it, the allowlist lets the session ask.
+On the VM, as a systemd user service, rather than inside the container. So there
+is no second list to update: dejima's own egress allowlist is a container
+control and never sees the post at all.
+
+Which cuts the other way too. Nothing narrows this pinhole one layer in, the way
+that allowlist narrows what a session reaches, so the width of rule `6b` is the
+entire answer to what this box can reach on that proxy.
 
 ##### And it goes in the group
 
