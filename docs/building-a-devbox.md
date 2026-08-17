@@ -85,6 +85,41 @@ node firewall. That is correct: nothing is contained yet.
 
 ## 5. Install dejima
 
+### The harness goes on this box first, and signs in here
+
+dejima runs sessions in a container and takes two things from the account that
+launches them: a harness installed on this VM, and that harness already signed
+in to the model backend. Do both before dejima's first session. They fail
+differently and neither failure names itself.
+
+**Signed in, because the credential proxy has to have something to hold.**
+dejima never mounts `~/.claude/.credentials.json` into the container. A
+host-side proxy reads the real token and the container gets a placeholder. That
+proxy runs as this account and reads this account's file, so an account that has
+never signed in leaves it holding nothing, and sessions fail at the API with the
+container looking like the broken part.
+
+**Installed and run here, because the mounts are host paths.** dejima
+bind-mounts directories under `~/.claude` into the container, and they have to
+exist on this side first. A bind mount whose source is missing is either created
+as an empty directory owned by root or refused outright, depending on how it is
+declared. Neither of those says "the harness has never run on this account",
+and the first leaves root-owned directories in a home that is not root's.
+
+The check is the harness's own, not this repository's: as the account that will
+run dejima, start it once and confirm it opens a session rather than asking you
+to log in. Installing it is that project's step, and its docs are where the
+route belongs.
+
+Then the rest of this section, in this order: the harness, signed in, and only
+then `install.sh`, which writes its hooks into the `~/.claude` that now exists.
+
+The credential this creates is the one [§7](#7-keep-the-credentials-off-this-box)
+cannot tell you to move off the box, for the same reason it has to be here: the
+proxy reads it locally.
+
+### Then dejima itself
+
 The source is already at `~/dejima`. Installing it is dejima's step, not this
 tool's:
 
