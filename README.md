@@ -93,14 +93,24 @@ hypervisor can be added later without touching a single step on the other page.
 
 ```sh
 sudo ./bin/dejima-devbox-bootstrap    # once, in the guest
+cd ~/dejima && ./install.sh           # dejima's own step, as your own account
 
 sudo dejima-devbox-audit              # both halves
 sudo dejima-devbox-audit reach        # containment only, what the timer runs
 sudo dejima-devbox-audit radius       # what root here would get
 ```
 
-All of these need root. The config is `0640 root`, and the radius report stats
-files in root's own home.
+Bootstrap installs what dejima needs from the host - Docker with the `compose`
+v2 plugin, `python3`, `jq` - and clones dejima to `~/dejima`. It stops there.
+Installing dejima is dejima's step: `install.sh` writes into your `~/.claude`,
+`~/.local/bin` and `~/.config/dejima`, and what it does there is that project's
+to define and to change. A copy of that contract kept here would go stale
+without anything noticing.
+
+The audit needs root. The config is `0640 root`, and the radius report stats
+files in the home of the account that runs dejima, which it reads from the
+config rather than from `$HOME` - under `sudo` and under the timer that is
+root's, whose home on a devbox holds nothing.
 
 ## How it fails
 

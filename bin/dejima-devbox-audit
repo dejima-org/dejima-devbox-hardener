@@ -95,16 +95,38 @@ gateway_verdict() {
     fi
 }
 
+cfg_get() {
+    local f="$CONF_DIR/config" v=""
+    [ -r "$f" ] && v=$(sed -n "s/^$1=//p" "$f" | tail -1)
+    [ -n "$v" ] || return 1
+    printf '%s\n' "$v"
+}
+
 # The forge's name, from config. Nothing is derived from the network here on
 # purpose: an attacker standing on this box can read /etc/dejima-devbox/config
 # as easily as we can, so there is no secret to protect and no reason to be
 # clever. What matters is that it is one value in one place, matching the rule
 # on the hypervisor - see proxmox/README.md, "Values that must agree".
-forge_host() {
-    local f="$CONF_DIR/config" v=""
-    [ -r "$f" ] && v=$(sed -n 's/^forge_host=//p' "$f" | tail -1)
-    [ -n "$v" ] || return 1
-    printf '%s\n' "$v"
+forge_host() { cfg_get forge_host; }
+
+# Whose home the radius report inventories, which is not this process's.
+#
+# This runs as root - from the timer, or under sudo, where HOME is root's - and
+# root's home on a devbox holds nothing. Everything the report is about lives in
+# the account that runs dejima: its credentials, its session memory, its
+# checkouts. Inventorying the wrong one does not merely miss them, it reports
+# "none found" on a box full of them, which is the reassuring direction to be
+# wrong in.
+#
+# bootstrap records the account. Falls back to $HOME when it is absent rather
+# than guessing at /home/*, so a host set up before this existed reports exactly
+# what it always did.
+devbox_home() {
+    local user home=""
+    if user=$(cfg_get devbox_user); then
+        home=$(getent passwd "$user" 2>/dev/null | cut -d: -f6)
+    fi
+    printf '%s\n' "${home:-$HOME}"
 }
 
 resolve_ok() { getent hosts "$1" >/dev/null 2>&1; }
@@ -276,15 +298,16 @@ newest_kernel() {
 #
 # Paths and modes. Never contents.
 cmd_radius() {
-    local f found=0 newest running mode
+    local f found=0 newest running mode home
+    home=$(devbox_home)
 
     say ""
     say "== What root on this VM would get =="
 
     say ""
-    say "Credentials:"
-    for f in "$HOME"/.ssh/id_* "$HOME"/.aws/credentials "$HOME"/.config/gh/hosts.yml \
-             "$HOME"/.docker/config.json "$CONF_DIR"/*token*; do
+    say "Credentials in $home:"
+    for f in "$home"/.ssh/id_* "$home"/.aws/credentials "$home"/.config/gh/hosts.yml \
+             "$home"/.docker/config.json "$CONF_DIR"/*token*; do
         case "$f" in *.pub) continue ;; esac
         [ -f "$f" ] || continue
         found=1
@@ -302,8 +325,8 @@ cmd_radius() {
     # what an operator can do about it.
     say ""
     say "Model API token:"
-    if [ -f "$HOME/.claude/.credentials.json" ]; then
-        say "  $(stat -c '%A %U:%G' "$HOME/.claude/.credentials.json" 2>/dev/null)  $HOME/.claude/.credentials.json"
+    if [ -f "$home/.claude/.credentials.json" ]; then
+        say "  $(stat -c '%A %U:%G' "$home/.claude/.credentials.json" 2>/dev/null)  $home/.claude/.credentials.json"
         say "  dejima keeps this out of the container. The proxy holding it runs"
         say "  here, so root here has it, and it cannot be moved off this host."
         say "  Rotate it first if this host is ever suspect."
@@ -324,10 +347,10 @@ cmd_radius() {
 
     say ""
     say "Agent memory:"
-    if [ -d "$HOME/.claude/projects" ]; then
-        say "  $(find "$HOME/.claude/projects" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l) project directories under $HOME/.claude/projects, readable by root here"
+    if [ -d "$home/.claude/projects" ]; then
+        say "  $(find "$home/.claude/projects" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l) project directories under $home/.claude/projects, readable by root here"
     else
-        say "  no $HOME/.claude/projects on this host"
+        say "  no $home/.claude/projects on this host"
     fi
 
     say ""

@@ -71,14 +71,43 @@ sudo ./bin/dejima-devbox-bootstrap
 
 One command. There is no separate install step.
 
-It checks its prerequisites, offers to pin the addressing, asks for your forge's
-hostname, installs the audit with its timer, runs the audit once, and then tells
-you where that result leaves the host.
+It asks which account will run dejima, installs what dejima needs from the host
+(Docker with the `compose` v2 plugin, `python3`, `jq`, `git`) and adds that
+account to the `docker` group, clones dejima to `~/dejima`, offers to pin the
+addressing, asks for your forge's hostname, installs the audit with its timer,
+runs the audit once, and then tells you where that result leaves the host.
+
+Everything needing the network happens before the addressing step, which is the
+one thing here that can take the network away.
 
 **Expect it to report FAIL the first time**, unless you have already applied the
 node firewall. That is correct: nothing is contained yet.
 
-## 5. Verify
+## 5. Install dejima
+
+The source is already at `~/dejima`. Installing it is dejima's step, not this
+tool's:
+
+```sh
+cd ~/dejima && ./install.sh          # as your own account, not root
+```
+
+Log out and back in first if bootstrap added you to the `docker` group. A shell
+that was already open does not have it, which presents as Docker being broken
+rather than as a group that has not taken effect.
+
+`install.sh` symlinks the CLIs into `~/.local/bin` and the hooks into
+`~/.claude/hooks`, and writes a starter `~/.config/dejima/config`. Put
+`~/.local/bin` on your `PATH`. What comes after that - a forge, a workflow, a
+push credential - is in
+[dejima's README](https://gitbox.branderson.io/dejima/dejima#setup). A fresh
+config pushes nowhere until you choose one.
+
+The line is deliberate. This repository hardens the machine dejima runs on, and
+what `install.sh` does to your account is dejima's to define and to change; a
+copy of that contract kept here would go stale without anything noticing.
+
+## 6. Verify
 
 ```sh
 sudo dejima-devbox-audit            # both halves
@@ -87,7 +116,10 @@ sudo dejima-devbox-audit radius     # what root here would get
 ```
 
 All three need root: the config is `0640 root`, and the radius report stats
-files in root's own home.
+files in the home of the account that runs dejima. It reads that account from
+the config rather than from `$HOME`, which under `sudo` and under the timer is
+root's - and root's home on a devbox holds nothing, so the report would have
+read `none found` on a box full of credentials.
 
 `reach` reports one of three things, and the third is the one to understand:
 
@@ -101,7 +133,7 @@ files in root's own home.
 tell them apart on its own. Reporting it as success would be the one failure
 that matters: a check believed when it does not know.
 
-## 6. Keep the credentials off this box
+## 7. Keep the credentials off this box
 
 Push with a **deploy token scoped to the repositories this box works on**, not
 with your personal key. The difference shows up exactly once, on the day the box
@@ -160,7 +192,7 @@ was there at the time. And it sits at a **known path with a known name**, which
 makes it one of the easiest things on the box to find and among the first a
 prompt injection or a supply-chain payload would go looking for.
 
-## 7. Keep the kernel and the runtime patched
+## 8. Keep the kernel and the runtime patched
 
 This is the whole of the response to container escape, and it is deliberate. An
 escape gets root, which is more than the container had, and root on this VM is
@@ -179,7 +211,7 @@ kernel fix that is installed but not running is not a fix. That is why
 `dejima-devbox-audit radius` prints the running kernel against the newest
 installed one, and says so when they differ.
 
-## 8. Snapshot again
+## 9. Snapshot again
 
 **VM → Snapshots → Take Snapshot**, named `clean`. No RAM.
 
