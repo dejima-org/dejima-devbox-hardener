@@ -189,10 +189,13 @@ setup() {
     HOME="$BATS_TEST_TMPDIR"
     run cmd_radius
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Credentials present"* ]]
+    [[ "$output" == *"Credentials"* ]]
     [[ "$output" == *"Group membership"* ]]
-    [[ "$output" == *"Patch currency"* ]]
-    [[ "$output" == *"not a detail"* ]]
+    [[ "$output" == *"Kernel"* ]]
+    # The last line the report prints after the command that once killed it.
+    # Both branches of the kernel check print it, so it is not a claim about
+    # what dpkg holds - only that the function got past dpkg-query.
+    [[ "$output" == *"newest installed"* ]]
 }
 
 # --- addressing mode and lease health ---------------------------------------
@@ -249,7 +252,7 @@ setup() {
     printf 'lease {\n  renew 0 %s;\n  expire 0 %s;\n}\n' "$past" "$future" > "$fixture_lease"
     touch -d '3 hours ago' "$fixture_lease"
     run cmd_radius
-    [[ "$output" == *"NOT BEEN RENEWED"* ]]
+    [[ "$output" == *"NOT RENEWING"* ]]
 }
 
 @test "a lease still inside its renewal window is not reported as failing" {
@@ -265,7 +268,7 @@ setup() {
     # report that says nothing about leases at all, which is how this test
     # went green before the feature existed.
     [[ "$output" == *"Addressing"* ]]
-    [[ "$output" != *"NOT BEEN RENEWED"* ]]
+    [[ "$output" != *"NOT RENEWING"* ]]
 }
 
 @test "an unparseable lease file does not take the report down with it" {
@@ -276,7 +279,7 @@ setup() {
     printf 'this is not a lease\n' > "$fixture_lease"
     run cmd_radius
     [ "$status" -eq 0 ]
-    [[ "$output" == *"not a detail"* ]]
+    [[ "$output" == *"newest installed"* ]]
 }
 
 @test "the credential that cannot be moved off the box is inventoried" {
@@ -292,6 +295,63 @@ setup() {
     [[ "$output" == *".credentials.json"* ]]
     [[ "$output" != *TOKENMATERIAL* ]]
     [[ "$output" == *"cannot be moved off"* ]]
+}
+
+# --- kernel currency --------------------------------------------------------
+#
+# A false "reboot pending" is worse than it sounds. It is the one line in the
+# report an operator is expected to act on, so a version of it that is wrong on
+# ordinary hosts teaches them to scroll past the whole section.
+
+@test "the unsigned image package is not read as a different kernel" {
+    # Debian's signed image is linux-image-<version> and the unsigned one is
+    # linux-image-<version>-unsigned. uname prints neither suffix, so comparing
+    # the bare package name reported a pending reboot on every host running an
+    # unsigned image, permanently, whatever it booted.
+    dpkg-query() { printf 'ii  linux-image-6.12.101+deb13-amd64-unsigned\n'; }
+    run newest_kernel
+    [ "$output" = "6.12.101+deb13-amd64" ]
+}
+
+@test "a kernel removed but not purged does not count as installed" {
+    # dpkg-query lists rc packages too. Counting one would announce a reboot
+    # into a kernel that is not on the disk.
+    dpkg-query() {
+        printf 'ii  linux-image-6.1.0-13-amd64\nrc  linux-image-6.12.101+deb13-amd64\n'
+    }
+    run newest_kernel
+    [ "$output" = "6.1.0-13-amd64" ]
+}
+
+@test "the newest of several installed kernels wins" {
+    dpkg-query() {
+        printf 'ii  linux-image-6.1.0-13-amd64\nii  linux-image-6.12.101+deb13-amd64\n'
+    }
+    run newest_kernel
+    [ "$output" = "6.12.101+deb13-amd64" ]
+}
+
+@test "no packaged kernel is reported as unanswered, not as up to date" {
+    dpkg-query() { return 1; }
+    HOME="$BATS_TEST_TMPDIR"
+    run cmd_radius
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"could not tell"* ]]
+    [[ "$output" != *"reboot pending"* ]]
+}
+
+@test "a running kernel matching the newest reports no pending reboot" {
+    HOME="$BATS_TEST_TMPDIR"
+    newest_kernel() { uname -r; }
+    run cmd_radius
+    [[ "$output" == *"reboot pending:   no"* ]]
+}
+
+@test "a running kernel behind the newest reports one" {
+    HOME="$BATS_TEST_TMPDIR"
+    newest_kernel() { printf '99.0.0-amd64\n'; }
+    run cmd_radius
+    [[ "$output" == *"reboot pending:   YES"* ]]
 }
 
 # --- wrong machine ----------------------------------------------------------

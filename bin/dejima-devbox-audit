@@ -76,9 +76,10 @@ probe_tcp() {
 gateway_verdict() {
     local gw port result
     if ! gw=$(default_gateway); then
+        # A failure rather than a skip: this check carries the exit status on
+        # its own, and a skip would leave a green run that verified nothing.
         say "$PROG: no default route, so there is nothing to probe."
-        say "  This check carries the exit status on its own, so a missing route"
-        say "  is a failure rather than a skip. Fix the route and run again."
+        say "  Fix the route and run again."
         return 2
     fi
     for port in "${PROBE_PORTS[@]}"; do
@@ -181,32 +182,23 @@ cmd_reach() {
     verdict=$(gateway_verdict) || return $?
     case $verdict in
         PASS)
-            say "PASS: the gateway is unreachable, and the network is working."
-            say "  Both halves matter. The second is what makes the first mean"
-            say "  something rather than being indistinguishable from a dead link."
+            say "PASS: the gateway is unreachable and the forge is reachable."
             ;;
         FAIL)
             say "FAIL: the gateway answered."
-            say "  Either the hypervisor rules are not applied to this VM, or an"
-            say "  exception above the DROPs is wider than it looks. Check the"
-            say "  Network device's Firewall checkbox first, then rule order in the"
-            say "  security group - the console inserts new rules at the top, so"
-            say "  the documented order has to be built by dragging or entered"
-            say "  backwards, and a rule left where it landed does nothing."
-            say ""
-            say "  One false alarm is possible: if a rule REJECTs rather than DROPs,"
-            say "  the block is working but sends an answer back, and this probe"
-            say "  cannot tell that from a live host refusing. Use DROP."
+            say "  Check, in this order:"
+            say "    1. the Firewall checkbox on the VM's Network device"
+            say "    2. rule order in the security group: every exception must sit"
+            say "       above the DROPs. The console inserts new rules at the top,"
+            say "       so a rule left where it landed is below nothing."
+            say "    3. that the rules DROP rather than REJECT. A REJECT is working"
+            say "       and still answers, which this probe reads as reachable."
             rc=1
             ;;
         INDETERMINATE)
-            say "INDETERMINATE: nothing answered, including things that should."
-            say "  That is consistent with the firewall working and equally"
-            say "  consistent with the network being broken, and this check cannot"
-            say "  tell them apart. Fix connectivity, then run again."
-            say ""
-            say "  It is not a pass. A check that reports success when it does not"
-            say "  know is worse than no check, because it gets believed."
+            say "INDETERMINATE: nothing answered, including the forge."
+            say "  A working firewall and a broken network look the same from here."
+            say "  Fix connectivity and run again. This is not a pass."
             rc=1
             ;;
     esac
@@ -228,7 +220,7 @@ cmd_reach() {
 lease_report() {
     local f now renew expire
     if ! f=$(lease_file); then
-        say "  No lease file found, so renewal cannot be checked here."
+        say "  no lease file found, so renewal is not checked"
         return 0
     fi
     now=$(date -u +%s)
@@ -236,23 +228,42 @@ lease_report() {
     expire=$(lease_time "$f" expire) || expire=""
 
     if [ -n "$expire" ]; then
-        say "  Lease expires in $(( (expire - now) / 3600 ))h."
+        say "  lease expires in $(( (expire - now) / 3600 ))h"
     fi
     if [ -z "$renew" ]; then
-        say "  No renewal time in $f, so renewal cannot be checked."
+        say "  no renewal time in $f, so renewal is not checked"
         return 0
     fi
 
     if [ "$now" -gt "$renew" ] && [ "$(stat -c %Y "$f" 2>/dev/null || echo 0)" -lt "$renew" ]; then
-        say "  THIS LEASE HAS NOT BEEN RENEWED since its renewal time passed."
-        say "  dhclient asked and got nothing back, which is what a dropped"
-        say "  reply looks like. Check that BOTH DHCP rules are on the"
-        say "  hypervisor: the outbound one alone gets the request out and the"
-        say "  lease still never completes."
-        say "  This is visible now and costs you the network when the lease"
-        say "  expires, which is the whole reason it is worth reporting early."
+        say "  NOT RENEWING. The renewal time has passed and dhclient has not"
+        say "  rewritten $f, which is what a dropped reply looks like."
+        say "  Check that BOTH DHCP rules are on the hypervisor: the outbound one"
+        say "  alone gets the request out and the lease still never completes."
     fi
     return 0
+}
+
+# The newest kernel dpkg holds installed, in the form uname -r prints. Empty
+# if the question cannot be answered here.
+#
+# Two transformations, and leaving either out makes the answer wrong in the
+# alarming direction. Debian ships the signed image as linux-image-<version>
+# and the unsigned one as linux-image-<version>-unsigned, while uname prints
+# neither suffix, so a bare package name compares unequal on every host running
+# an unsigned image and reports a reboot that is not pending. And dpkg-query
+# reports packages it merely remembers, so a kernel removed but not purged
+# would otherwise present itself as installed.
+newest_kernel() {
+    command -v dpkg-query >/dev/null 2>&1 || return 0
+    # The || true is load-bearing. dpkg-query exits non-zero when nothing
+    # matches, and under set -e with pipefail that killed cmd_radius halfway
+    # through its own report - which looked like the report simply ending, with
+    # no error anywhere. Found by running it in a container.
+    dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'linux-image-[0-9]*' 2>/dev/null \
+        | sed -n 's/^ii  *linux-image-//p' \
+        | sed 's/-unsigned$//' \
+        | sort -V | tail -1 || true
 }
 
 # What root on this VM would obtain.
@@ -265,13 +276,13 @@ lease_report() {
 #
 # Paths and modes. Never contents.
 cmd_radius() {
-    local f found=0 newest mode
+    local f found=0 newest running mode
 
     say ""
     say "== What root on this VM would get =="
 
     say ""
-    say "Credentials present:"
+    say "Credentials:"
     for f in "$HOME"/.ssh/id_* "$HOME"/.aws/credentials "$HOME"/.config/gh/hosts.yml \
              "$HOME"/.docker/config.json "$CONF_DIR"/*token*; do
         case "$f" in *.pub) continue ;; esac
@@ -279,54 +290,44 @@ cmd_radius() {
         found=1
         say "  $(stat -c '%A %U:%G' "$f" 2>/dev/null)  $f"
     done
-    [ "$found" = 1 ] || say "  none found"
-    say "  Anything listed here is reusable somewhere else. A scoped deploy"
-    say "  token is revoked and reissued; a personal key is every host that"
-    say "  trusts it."
+    if [ "$found" = 1 ]; then
+        say "  Each of these is reusable off this box. Revoke and reissue them if"
+        say "  this host is ever suspect."
+    else
+        say "  none found"
+    fi
 
     # Listed separately because the advice differs. Everything above can be
     # taken off the box; this cannot, so knowing it is here is the whole of
     # what an operator can do about it.
     say ""
-    say "The credential that cannot be moved off:"
+    say "Model API token:"
     if [ -f "$HOME/.claude/.credentials.json" ]; then
         say "  $(stat -c '%A %U:%G' "$HOME/.claude/.credentials.json" 2>/dev/null)  $HOME/.claude/.credentials.json"
-        say "  The model API token. dejima keeps it out of the container, so a"
-        say "  session can use the API while it runs and cannot carry the token"
-        say "  away. The proxy that holds it runs here, so root here has it."
-        say "  That is the step which turns temporary use into a token someone"
-        say "  keeps. If this box is ever suspect, rotate this first."
-        say ""
-        say "  Not because it is the only thing here worth taking - source and"
-        say "  uncommitted work leave just as easily - but because it is a"
-        say "  standing capability rather than a copy, and it sits at a known"
-        say "  path under a known name, which makes it among the easiest things"
-        say "  on this box to find."
+        say "  dejima keeps this out of the container. The proxy holding it runs"
+        say "  here, so root here has it, and it cannot be moved off this host."
+        say "  Rotate it first if this host is ever suspect."
     else
-        say "  no ~/.claude/.credentials.json here. Either this host does not"
-        say "  launch sessions, or authentication is by API key held elsewhere."
+        say "  not present. This host either launches no sessions, or"
+        say "  authenticates with an API key held elsewhere."
     fi
 
     say ""
     say "Group membership:"
     if id 2>/dev/null | grep -q '(docker)'; then
         say "  in the docker group, which is root-equivalent: 'docker run -v /:/host"
-        say "  --privileged' is one command and needs no exploit."
-        say "  Reported, not corrected. dejima needs it, and separating escape from"
-        say "  root was weighed and rejected - see docs/threat-model.md."
+        say "  --privileged' needs no exploit."
+        say "  Required by dejima. Reported, not corrected - docs/threat-model.md."
     else
         say "  not in the docker group"
     fi
 
     say ""
-    say "Agent memory on this host:"
+    say "Agent memory:"
     if [ -d "$HOME/.claude/projects" ]; then
-        say "  $(find "$HOME/.claude/projects" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l) project directories, all of them readable by root here."
-        say "  That is what root on this VM reaches, which is this section's"
-        say "  subject. What a session inside a container reaches is a separate"
-        say "  question, decided by dejima's mounts rather than by anything here."
+        say "  $(find "$HOME/.claude/projects" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l) project directories under $HOME/.claude/projects, readable by root here"
     else
-        say "  no ~/.claude/projects on this host"
+        say "  no $HOME/.claude/projects on this host"
     fi
 
     say ""
@@ -334,49 +335,40 @@ cmd_radius() {
     mode=$(addressing_mode)
     case $mode in
         static)
-            say "  static in the guest. Needs no DHCP rules on the hypervisor,"
-            say "  which is the tightest of the three modes at the boundary."
+            say "  static. Needs no DHCP rules on the hypervisor."
             ;;
         dhcp)
-            say "  DHCP. The hypervisor needs BOTH halves of the DHCP pair - out"
-            say "  udp/67 and in udp/68 - including when the address is reserved"
-            say "  for you on the router. A reservation does not stop the guest"
+            say "  DHCP. The hypervisor needs BOTH halves of the DHCP pair, out"
+            say "  udp/67 and in udp/68, including when the address is reserved for"
+            say "  you on the router: a reservation does not stop the guest"
             say "  speaking DHCP."
             lease_report
             ;;
         *)
-            say "  could not tell. Neither a static nor a dhcp stanza was found"
-            say "  in $INTERFACES_FILE and there is no lease file, so whether"
-            say "  this host needs the DHCP rules is an open question."
+            say "  could not tell: no static or dhcp stanza in $INTERFACES_FILE and"
+            say "  no lease file, so whether the DHCP rules are needed is unresolved"
             ;;
     esac
 
     say ""
-    say "Patch currency:"
-    say "  running kernel:   $(uname -r)"
-    newest=""
-    if command -v dpkg-query >/dev/null 2>&1; then
-        # The || true is load-bearing. dpkg-query exits non-zero when nothing
-        # matches, and under set -e with pipefail that killed this function
-        # halfway through its own report - which looked like the report simply
-        # ending, with no error anywhere. Found by running it in a container.
-        newest=$(dpkg-query -W -f='${Package}\n' 'linux-image-[0-9]*' 2>/dev/null \
-                 | sort -V | tail -1 | sed 's/^linux-image-//' || true)
-    fi
+    say "Kernel:"
+    running=$(uname -r)
+    newest=$(newest_kernel)
+    say "  running:          $running"
     if [ -n "$newest" ]; then
         say "  newest installed: $newest"
-        [ "$newest" = "$(uname -r)" ] \
-            || say "  THESE DIFFER. A reboot is pending, and the fix is not running."
+        if [ "$newest" = "$running" ]; then
+            say "  reboot pending:   no"
+        else
+            say "  reboot pending:   YES, so the newest kernel is not the one running"
+        fi
     else
         # Blank would read as a bug. Say which question went unanswered.
-        say "  newest installed: could not tell - no packaged kernel found."
-        say "  Expected on a container or an image-based system, and worth a"
-        say "  second look on a VM, where it usually means the check is wrong"
-        say "  rather than that no kernel is installed."
+        say "  newest installed: could not tell, no packaged kernel found."
+        say "  Expected in a container or on an image-based system; on a VM it"
+        say "  usually means this check is wrong rather than that no kernel is"
+        say "  installed."
     fi
-    say "  A pending reboot is the usual reason a patched box is not patched."
-    say "  Keeping these two equal is the whole of the response to container"
-    say "  escape here, so it is not a detail."
     return 0
 }
 
@@ -404,12 +396,8 @@ in_container() {
 container_warning() {
     in_container || return 0
     say "$PROG: this looks like a container, not a devbox."
-    say ""
-    say "  What follows describes this container. The gateway probed is the"
-    say "  container's own, any credential found is what is mounted here, and"
-    say "  the verdict is about the container's egress rather than the VM's."
-    say ""
-    say "  For a reading about the devbox, install this with"
+    say "  What follows describes the container: its gateway, its mounts, its"
+    say "  group memberships. For a reading about the devbox, install this with"
     say "  dejima-devbox-bootstrap and run it there. Continuing anyway."
     say ""
 }
