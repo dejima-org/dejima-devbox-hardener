@@ -75,7 +75,8 @@ It asks which account will run dejima, installs what dejima needs from the host
 (Docker with the `compose` v2 plugin, `python3`, `jq`, `git`) and adds that
 account to the `docker` group, clones dejima to `~/dejima`, offers to pin the
 addressing, asks for your forge's hostname, installs the audit with its timer,
-runs the audit once, and then tells you where that result leaves the host.
+runs the audit once, and then tells you where that result leaves the host and
+how far the account has got with §5's harness step.
 
 Everything needing the network happens before the addressing step, which is the
 one thing here that can take the network away.

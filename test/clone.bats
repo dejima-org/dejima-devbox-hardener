@@ -116,6 +116,15 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+@test "bootstrap tells the operator the harness comes before dejima" {
+    # The other half of that handoff, and the one with nothing else pointing at
+    # it. dejima needs a harness installed for the account and signed in, this
+    # program arranges neither, and an operator who reads only its output
+    # reaches the first session with a credential proxy holding nothing.
+    grep -q 'harness' "$REPO/bin/dejima-devbox-bootstrap"
+    grep -q '\.credentials\.json' "$REPO/bin/dejima-devbox-bootstrap"
+}
+
 @test "bootstrap does not clone into root's home" {
     # It runs under sudo. $HOME there is root's, so the target has to be
     # resolved from the account rather than inherited.

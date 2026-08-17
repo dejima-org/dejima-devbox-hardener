@@ -359,6 +359,48 @@ else
     say "  in the guest can apply them, and this program cannot either."
 fi
 
+# ---------------------------------------------------------------------------
+# 10. The prerequisite this program deliberately does not meet.
+#
+# dejima takes two things from the account that launches it: a harness
+# installed for that account, and that harness signed in. Both are the
+# account's rather than the machine's, and the sign-in writes a credential this
+# program has no business handling, so it says what has to be true instead of
+# arranging it.
+#
+# One half is checkable from here and the other is not, and the two messages
+# differ because saying the same thing either way is how a check stops being
+# read. Whether the harness has ever run: yes if ~/.claude exists, and that
+# directory matters beyond the credential because dejima mounts paths under it.
+# A bind mount whose source is missing is a root-owned empty directory in
+# somebody's home rather than an error naming what is absent. Whether the token
+# in it still works: not from here. A file being present is where this stops.
+
+say ""
+if [ ! -d "$target_home/.claude" ]; then
+    say "The harness has not run as $target_user on this box."
+    say ""
+    say "  Install it for that account and start it once, signed in, before"
+    say "  dejima's first session. $target_home/.claude does not exist yet,"
+    say "  and it is both where the credential lands and what dejima mounts"
+    say "  into the container."
+elif [ ! -f "$target_home/.claude/.credentials.json" ]; then
+    say "The harness has run as $target_user and has not signed in here."
+    say ""
+    say "  There is no $target_home/.claude/.credentials.json. The credential"
+    say "  proxy runs out here, reads that file and hands the container a"
+    say "  placeholder, so until it exists a session fails at the API and the"
+    say "  container is what looks broken. An API key in that account's"
+    say "  environment is the other way to answer this."
+else
+    say "The harness is signed in for $target_user, as far as this can tell:"
+    say "$target_home/.claude/.credentials.json is there. Whether that token"
+    say "still works is between the harness and the backend."
+fi
+say ""
+say "  docs/building-a-devbox.md section 5 has both halves, and what each one"
+say "  breaks when it is the missing one."
+
 # The handoff. Everything above this point is the machine; everything below it
 # belongs to dejima, and the boundary is deliberate - see bin/dejima-devbox-clone
 # for why the source is fetched here and installed there.
