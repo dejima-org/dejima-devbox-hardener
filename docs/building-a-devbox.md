@@ -63,7 +63,7 @@ out whether a step works by trying it rather than by reasoning about it.
 ## 4. Build it
 
 ```sh
-git clone <your-forge>/dejima/dejima-devbox-hardener
+git clone https://gitbox.branderson.io/dejima/dejima-devbox-hardener
 cd dejima-devbox-hardener
 sudo ./bin/dejima-devbox-bootstrap
 ```
