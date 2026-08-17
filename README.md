@@ -108,10 +108,10 @@ to define and to change. A copy of that contract kept here would go stale
 without anything noticing.
 
 **The harness is a step before that one**, and neither this tool nor
-`install.sh` arranges it: it is installed on this box, as the account that will
-run dejima, and signed in to the model backend before the first session. The
-credential proxy runs on this side and reads that account's token, and the
-container's mounts are that account's directories. [docs/building-a-devbox.md
+`install.sh` arranges it: whichever harness dejima will run for you, it is
+installed on this box as the account that will run dejima, and signed in, before
+the first session. The credential proxy runs on this side and reads that
+account's copy, and the container's mounts are that account's directories. [docs/building-a-devbox.md
 §5](docs/building-a-devbox.md#the-harness-goes-on-this-box-first-and-signs-in-here)
 has what each half breaks if it is missing.
 

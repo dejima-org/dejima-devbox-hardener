@@ -122,7 +122,11 @@ setup() {
     # program arranges neither, and an operator who reads only its output
     # reaches the first session with a credential proxy holding nothing.
     grep -q 'harness' "$REPO/bin/dejima-devbox-bootstrap"
-    grep -q '\.credentials\.json' "$REPO/bin/dejima-devbox-bootstrap"
+
+    # And says it without asserting which harness dejima runs. That set lives
+    # there and changes there, so one this program does not know is reported as
+    # something it cannot see rather than as a step the operator skipped.
+    grep -q 'recognises' "$REPO/bin/dejima-devbox-bootstrap"
 }
 
 @test "bootstrap does not clone into root's home" {

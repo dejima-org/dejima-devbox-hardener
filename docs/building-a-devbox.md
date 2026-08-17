@@ -94,18 +94,25 @@ in to the model backend. Do both before dejima's first session. They fail
 differently and neither failure names itself.
 
 **Signed in, because the credential proxy has to have something to hold.**
-dejima never mounts `~/.claude/.credentials.json` into the container. A
-host-side proxy reads the real token and the container gets a placeholder. That
-proxy runs as this account and reads this account's file, so an account that has
-never signed in leaves it holding nothing, and sessions fail at the API with the
-container looking like the broken part.
+dejima keeps the harness's credential out of the container: a host-side proxy
+reads the real one and the container gets a placeholder. That proxy runs as this
+account and reads this account's copy, so an account that has never signed in
+leaves it holding nothing, and sessions fail at the backend with the container
+looking like the broken part.
 
-**Installed and run here, because the mounts are host paths.** dejima
-bind-mounts directories under `~/.claude` into the container, and they have to
-exist on this side first. A bind mount whose source is missing is either created
-as an empty directory owned by root or refused outright, depending on how it is
-declared. Neither of those says "the harness has never run on this account",
-and the first leaves root-owned directories in a home that is not root's.
+**Installed and run here, because the mounts are host paths.** dejima bind-mounts
+the harness's state directory into the container, and it has to exist on this
+side first. A bind mount whose source is missing is either created as an empty
+directory owned by root or refused outright, depending on how it is declared.
+Neither of those says "the harness has never run on this account", and the first
+leaves root-owned directories in a home that is not root's.
+
+**Which harness, and therefore which paths, is dejima's to say.** It supports
+more than one, and the set changes there rather than here, so this page names no
+directory as the answer. For Claude Code the state directory is `~/.claude` and
+the credential inside it is `~/.claude/.credentials.json`; another harness keeps
+its own, somewhere of its own choosing. What holds across all of them is the
+shape of the requirement above.
 
 The check is the harness's own, not this repository's: as the account that will
 run dejima, start it once and confirm it opens a session rather than asking you
@@ -113,7 +120,8 @@ to log in. Installing it is that project's step, and its docs are where the
 route belongs.
 
 Then the rest of this section, in this order: the harness, signed in, and only
-then `install.sh`, which writes its hooks into the `~/.claude` that now exists.
+then `install.sh`, which writes its hooks into the state directory that now
+exists.
 
 The credential this creates is the one [§7](#7-keep-the-credentials-off-this-box)
 cannot tell you to move off the box, for the same reason it has to be here: the
