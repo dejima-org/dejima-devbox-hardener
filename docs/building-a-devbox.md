@@ -63,6 +63,7 @@ out whether a step works by trying it rather than by reasoning about it.
 ## 4. Build it
 
 ```sh
+sudo apt-get update && sudo apt-get install -y git
 git clone https://gitbox.branderson.io/dejima/dejima-devbox-hardener
 cd dejima-devbox-hardener
 sudo ./bin/dejima-devbox-bootstrap
