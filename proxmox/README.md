@@ -170,6 +170,10 @@ range, and above them sit exceptions for the two hosts this VM genuinely needs:
 your forge and your resolver. That is the bound this whole project states, and
 it does not change however long the inbound list gets.
 
+A third joins them if you want dejima's notifications, and it is the one to be
+careful with rather than the DHCP pair: see [One more, if you want dejima's
+notifications](#one-more-if-you-want-dejimas-notifications).
+
 The inbound half is the part that grows, because unlike a CI runner a devbox
 offers services you want to reach. Keep it legible rather than short: every
 subnet named here, every port stated, and no rule added anywhere else.
@@ -285,6 +289,150 @@ for every host on that segment whatever the firewall does, so permitting the
 reply does not create that exposure. Not using DHCP is still narrower, and
 `dejima-devbox-static-ip` exists for it.
 
+#### One more, if you want dejima's notifications
+
+dejima can post a notification when a session finishes or wants an answer, to an
+ntfy server. That server is on your LAN, so rule 7 drops the post and the
+feature quietly does nothing: no error anywhere you would look, no notification,
+and a devbox that appears to have the feature switched off.
+
+One line fixes it, and it is the most dangerous line on this page.
+
+| # | Direction | Action | Protocol | Dest. port | Source / Dest | Why |
+| --- | --- | --- | --- | --- | --- | --- |
+| 6b | out | ACCEPT | tcp | ntfy's port | **Dest:** ntfy's IP | Post a notification |
+
+Place it with rules 3–6, above the DROPs, and read the rest of this section
+before you do. What that destination is decides whether the rule grants one
+service or your whole network.
+
+##### Why the obvious version of it hands back the entire boundary
+
+On most home networks ntfy is not a host. It is a name on the reverse proxy that
+fronts everything else you run, so its address is the proxy's address and its
+port is 443.
+
+**These rules match an address and a port.** They cannot see the `Host` header
+or the TLS SNI, and those are the only things that tell `ntfy.example.com` apart
+from every other name that proxy serves. A rule naming the proxy on 443 does not
+grant ntfy. It grants the dashboards, the NAS web UI, the router, the hypervisor
+if it is proxied, and whatever gets added behind that proxy next year by someone
+not thinking about this rule. Rules 7 to 10 stay in the list and stop meaning
+what this page says they mean.
+
+Nothing catches it afterwards. `dejima-devbox-audit` probes the gateway, the
+gateway is still dropped, so it keeps reporting `PASS` on a devbox that can now
+reach every service on the proxy. In the console the rule reads as one host, for
+as long as anyone looks at it.
+
+##### The two shapes that do not
+
+Both do the same thing: make ntfy a destination the firewall can name, by
+putting it on a listener that serves ntfy and nothing else.
+
+**A dedicated port, which is the simpler of the two.** Serve ntfy on `8443` on
+the proxy's existing address and open only that port. Every other vhost is on
+443 and does not appear on 8443 unless someone puts it there, so the failure
+mode is a listener you must add to on purpose rather than one that inherits
+everything by default. The cost is that this devbox's ntfy URL carries a port
+that no other client uses.
+
+```nginx
+# ntfy, alone on 8443. THIS PORT IS A FIREWALL PINHOLE: anything else given a
+# server block here becomes reachable from the devbox.
+server {
+    listen <proxy-ip>:8443 ssl;
+    server_name ntfy.example.com;
+
+    ssl_certificate     /etc/ssl/ntfy/fullchain.pem;
+    ssl_certificate_key /etc/ssl/ntfy/privkey.pem;
+
+    location / {
+        proxy_pass http://<ntfy-backend>:80;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # ntfy holds subscriptions open and streams into them. Without these
+        # the publish side works and subscribers see nothing until a timeout.
+        proxy_read_timeout 3m;
+        proxy_send_timeout 3m;
+        proxy_buffering    off;
+    }
+}
+
+# A name that matches nothing on this port gets nothing, rather than falling
+# through to the block above.
+server {
+    listen <proxy-ip>:8443 ssl default_server;
+    ssl_certificate     /etc/ssl/ntfy/fullchain.pem;
+    ssl_certificate_key /etc/ssl/ntfy/privkey.pem;
+    return 444;
+}
+```
+
+**A dedicated address**, if you would rather every client kept the same URL. Add
+a second IP to the proxy, bind ntfy to it, point the DNS record at it, and open
+443 on that address only.
+
+It has a trap the port shape does not, and it is easy to miss: `listen 443 ssl`
+binds the wildcard, so **every existing vhost answers on the new address the
+moment it exists**, and the pinhole grants all of them exactly as before. Taking
+this shape means pinning every other server block to the old address explicitly
+(`listen <proxy-ip>:443 ssl;`) and putting a `default_server` returning `444` on
+the new one to catch whatever was missed. That is an edit to every vhost on the
+box, which is why the port shape is first here.
+
+##### Check it from the VM, rather than assuming it
+
+Three probes. The first must succeed and the other two must not, which is what
+makes the set diagnostic rather than reassuring:
+
+```sh
+curl -sSf -d "from the devbox" https://ntfy.example.com:8443/<topic>
+
+# another name on the same proxy, reached on the port the rule opens
+curl -sS --max-time 5 --resolve other.example.com:8443:<proxy-ip> \
+     https://other.example.com:8443/ ; echo "exit $?"
+
+# the port everything else is actually on
+timeout 5 bash -c 'exec 3<>/dev/tcp/<proxy-ip>/443' \
+    && echo "CONNECTED - the pinhole is wider than ntfy" || echo "blocked"
+```
+
+The third is the one that says whether this section worked. If the proxy answers
+on 443, the rule names the proxy rather than ntfy and every service behind it is
+reachable from this box.
+
+##### Scope the token as well
+
+The rule bounds where the devbox can connect, not what it can do on arrival.
+Anything on the box can now publish to any topic on that server and, depending
+on how ntfy is configured, subscribe to them.
+
+Give the notify service an access token with write access to the topics it uses
+and no read access to anything, so a compromised devbox can post noise and
+cannot read the notifications your other clients are getting. That is the half
+of this the firewall has no way to express.
+
+##### Where the notify service runs, and why that matters here
+
+On the VM, as a systemd user service, rather than inside the container. So there
+is no second list to update: dejima's own egress allowlist is a container
+control and never sees the post at all.
+
+Which cuts the other way too. Nothing narrows this pinhole one layer in, the way
+that allowlist narrows what a session reaches, so the width of rule `6b` is the
+entire answer to what this box can reach on that proxy.
+
+##### And it goes in the group
+
+Not on the VM directly. This is exactly the exception the [hazards
+section](#two-hazards-no-rule-covers) is about, and the group is the one place
+the whole LAN exposure can be read in one sitting.
+
 ### Then apply it, per VM
 
 A security group carries **rules and nothing else**. The policies are not part
@@ -345,9 +493,10 @@ Either way, **read the finished list top to bottom and compare it against the
 table** before you trust it. Nothing else catches this: a dead pinhole looks
 exactly like a working firewall until something tries to reach the forge.
 
-Rules 3–6 are the entire remaining LAN exposure, and they are why "no LAN
-access" is not literally true. Both destinations are pinned to one host, on
-the ports named.
+Rules 3–6, plus rule `6b` if you took it, are the entire remaining LAN exposure,
+and they are why "no LAN access" is not literally true. Every destination is
+pinned to one host, on the ports named, and rule `6b` is only that if its
+destination serves one service.
 
 Nothing follows rule 10. The public internet is reached by the default policy.
 
@@ -364,6 +513,7 @@ memory.
 | Rules 3–4's destination | The forge's address | `getent hosts <forge-hostname>` |
 | Rule 1's source | The subnets you administer from | your own devices |
 | Rule 2's source | The subnets a phone is on | your own devices |
+| Rule `6b`'s destination and port | A listener serving **only** ntfy | `ss -lntp` on the proxy, and the probes above |
 | The forge's hostname | `forge_host` in `/etc/dejima-devbox/config` | `dejima-devbox-bootstrap` asks and writes it |
 
 **Rules 5–6 want the nameserver, not the gateway.** They are the same address
@@ -528,7 +678,9 @@ directly rather than through it. This is easy to leave on by accident, because
 it is often set globally and never thought about again.
 
 **Exception creep.** A NAS today, a registry next month, a printer after that.
-Each is reasonable on its own and the set is nobody's decision. Every LAN
-exception belongs in §3's table and nowhere else, so the list can be read in
-one place and pruned in one place. A rule added directly to the VM rather than
+Each is reasonable on its own and the set is nobody's decision. [The
+notification rule](#one-more-if-you-want-dejimas-notifications) is the worked
+example, including the version of it that grants far more than it appears to.
+Every LAN exception belongs in §3's table and nowhere else, so the list can be
+read in one place and pruned in one place. A rule added directly to the VM rather than
 to the group is the one that gets forgotten.

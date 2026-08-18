@@ -102,9 +102,9 @@ IN ACCEPT -source __FRONT_DOOR_SUBNET__ -p tcp -dport __FRONT_DOOR_PORT__ -log n
 # so a rule permitting the reply does not create the exposure.
 IN ACCEPT -p udp -dport 68 -log nolog
 
-# --- the two LAN exceptions -------------------------------------------------
+# --- the LAN exceptions -----------------------------------------------------
 # ORDER MATTERS: these must come before the DROPs below, because first match
-# wins and both of these addresses are inside the ranges those DROPs cover.
+# wins and every one of these addresses is inside the ranges those DROPs cover.
 #
 # In the web console this is harder than it looks. New rules are inserted at
 # the TOP of the list, so entering them in the order written here produces the
@@ -116,15 +116,33 @@ IN ACCEPT -p udp -dport 68 -log nolog
 # access" is not literally true: you cannot push without the forge, and the
 # forge's name cannot resolve without a resolver.
 #
-# Two hosts, however many ports. Everything else on your network is dropped
-# below, and every addition here should be weighed against that sentence
-# staying short enough to read.
+# Two hosts, however many ports, and a third only if you take the optional
+# notification rule below. Everything else on your network is dropped below,
+# and every addition here should be weighed against that sentence staying short
+# enough to read.
 OUT ACCEPT -dest __FORGE_IP__ -p tcp -dport 443 -log nolog
 # A devbox pushes over SSH. A CI runner only ever talked to the API, which is
 # why this line has no counterpart there.
 OUT ACCEPT -dest __FORGE_IP__ -p tcp -dport 22 -log nolog
 OUT ACCEPT -dest __RESOLVER_IP__ -p udp -dport 53 -log nolog
 OUT ACCEPT -dest __RESOLVER_IP__ -p tcp -dport 53 -log nolog
+
+# NOTIFICATIONS: omit this line unless you use dejima's, and read the section
+# it points at before adding it. This is the exception most likely to undo the
+# four DROPs below without looking like it has.
+#
+# dejima's notify service posts to an ntfy server. On a home network that
+# server is usually a name on the reverse proxy that fronts everything else you
+# run, and a rule naming that proxy's address does not grant ntfy: it grants
+# every service the proxy routes. This firewall matches an address and a port.
+# It cannot see the Host header or the TLS SNI, and those are what decide which
+# of the proxy's hundred names answers.
+#
+# So what is named here has to be a listener that serves ntfy and nothing else:
+# a dedicated port, or a dedicated address. proxmox/README.md section 3 has
+# both shapes, the nginx to build one, and how to check it from the VM rather
+# than assume it.
+OUT ACCEPT -dest __NTFY_IP__ -p tcp -dport __NTFY_PORT__ -log nolog
 
 # DHCP: omit this and the IN rule above if the address is static in the guest.
 #
