@@ -359,6 +359,75 @@ else
     say "  in the guest can apply them, and this program cannot either."
 fi
 
+# ---------------------------------------------------------------------------
+# 10. The prerequisite this program deliberately does not meet.
+#
+# dejima takes two things from the account that launches it: a harness
+# installed for that account, and that harness signed in. Both are the
+# account's rather than the machine's, and the sign-in writes a credential this
+# program has no business handling, so it says what has to be true instead of
+# arranging it.
+#
+# WHICH harness is dejima's business, not this program's. It supports more than
+# one and that set changes there, so the table below is recognition and not a
+# statement of what is supported: a harness missing from it is reported as
+# something this cannot see, never as something the operator has failed to do.
+# The alternative - a list here that has to be kept level with dejima's - is the
+# copied contract this repository argues against everywhere else, and it would
+# go stale by telling somebody their working setup is absent.
+#
+# So three outcomes rather than two, on the same reasoning as the audit's:
+# found and signed in, found and not signed in, and nothing recognised, which is
+# not a finding. Whether a credential that IS there still works is not knowable
+# from here either. A file being present is where this stops.
+#
+# Each row is <state directory>:<file that means signed in>:<name to say>,
+# relative to the account's home.
+harness_dir=""
+# One row today, and a loop anyway: the next harness is a line rather than a
+# rewrite, and the shape says that to whoever adds it.
+# shellcheck disable=SC2043
+for row in ".claude:.credentials.json:Claude Code"; do
+    d="${row%%:*}"; rest="${row#*:}"
+    if [ -d "$target_home/$d" ]; then
+        harness_dir="$d"
+        harness_cred="${rest%%:*}"
+        harness_name="${rest#*:}"
+        break
+    fi
+done
+
+say ""
+if [ -z "$harness_dir" ]; then
+    say "No harness this program recognises has run as $target_user here."
+    say ""
+    say "  That is not the same as none being set up: which harnesses dejima"
+    say "  supports is dejima's to say, and this only knows the ones it was"
+    say "  written with. If you have one it does not name, nothing is wrong."
+    say ""
+    say "  What has to be true either way, before dejima's first session: the"
+    say "  harness is installed for $target_user, has been run once so its"
+    say "  state directory exists in $target_home to be mounted, and is signed"
+    say "  in - the credential proxy runs out here and reads that account's"
+    say "  copy."
+elif [ ! -f "$target_home/$harness_dir/$harness_cred" ]; then
+    say "$harness_name has run as $target_user and is not signed in here."
+    say ""
+    say "  There is no $target_home/$harness_dir/$harness_cred. The credential"
+    say "  proxy runs out here, reads that file and hands the container a"
+    say "  placeholder, so until it exists a session fails at the backend and"
+    say "  the container is what looks broken. A key in that account's"
+    say "  environment is the other way to answer this, and this cannot see"
+    say "  one from root."
+else
+    say "$harness_name is signed in for $target_user, as far as this can tell:"
+    say "$target_home/$harness_dir/$harness_cred is there. Whether that"
+    say "credential still works is between the harness and its backend."
+fi
+say ""
+say "  docs/building-a-devbox.md section 5 has both halves, and what each one"
+say "  breaks when it is the missing one."
+
 # The handoff. Everything above this point is the machine; everything below it
 # belongs to dejima, and the boundary is deliberate - see bin/dejima-devbox-clone
 # for why the source is fetched here and installed there.
