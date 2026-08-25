@@ -133,6 +133,17 @@ read `none found` on a box full of credentials.
 tell them apart on its own. Reporting it as success would be the one failure
 that matters: a check believed when it does not know.
 
+**`reach` runs a second check, on IPv6, and reports it on its own line.** The
+node's DROPs name IPv4 ranges and match none of that traffic, so a VM that
+reaches the whole LAN over IPv6 passes every check above with nothing to show
+for it. This one asks the segment who is there and counts the answers. It uses
+`ping`, from `iputils-ping`, which §5's bootstrap installs — without it the
+check reports `INDETERMINATE`, which is again not a pass.
+
+If it says `FAIL`, the fix is rule 12 on the node, not a sysctl in here. See
+[the threat model](threat-model.md#the-lan-boundary-is-two-boundaries) for why
+that distinction is not pedantry.
+
 ## 7. Keep the credentials off this box
 
 Push with a **deploy token scoped to the repositories this box works on**, not

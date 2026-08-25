@@ -109,9 +109,15 @@ apt-get update -qq
 # python3 and jq are dejima's own prerequisites: the host-side credential proxy
 # is python3, and its installer reads settings.json with jq. git is here for
 # the clone below.
+#
+# iputils-ping is the audit's, and it is named rather than assumed. A standard
+# Debian install has it and a minimal or cloud image often does not, and its
+# absence has no symptom: without it the audit cannot ask the segment who is
+# reachable over IPv6, which is a check it must then report as INDETERMINATE
+# rather than pass. Cheaper to install than to diagnose.
 apt-get install -y -qq --no-install-recommends \
     docker.io docker-cli \
-    python3 jq git ca-certificates curl
+    python3 jq git ca-certificates curl iputils-ping
 
 if ! command -v docker >/dev/null 2>&1; then
     {

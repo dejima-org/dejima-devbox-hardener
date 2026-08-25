@@ -17,6 +17,14 @@ setup() {
     REPO="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
     source "$REPO/bin/dejima-devbox-audit"
     default_gateway() { printf '192.0.2.1\n'; }
+    # The two IPv6 functions that touch the network, stubbed to the contained
+    # answer for the same reason default_gateway is: every test would otherwise
+    # ping the segment it happens to be running on.
+    #
+    # Their caller, ipv6_verdict, is deliberately NOT stubbed - see the note
+    # below on positive_controls_ok for what that mistake looks like.
+    ipv6_routable_addr() { printf ''; }
+    ipv6_neighbour_replies() { printf '0\n'; }
     # positive_controls_ok is deliberately NOT stubbed here. Stubbing it in
     # setup shadowed the real function for the tests that exist to check it,
     # and they passed against the stub. Each test that needs it faked says so.
@@ -127,6 +135,125 @@ setup() {
     gateway_verdict() { printf 'FAIL\n'; }
     run cmd_reach
     [[ "$output" == *REJECT* ]]
+}
+
+# --- the other address family ------------------------------------------------
+#
+# The v4 checks above cannot see this at all: a guest reaching the LAN over IPv6
+# has an unreachable v4 gateway and a reachable forge, which is exactly what a
+# pass looks like.
+
+@test "a global IPv6 address is a failure on its own, with no probe needed" {
+    # It got there by SLAAC or DHCPv6, so an advertisement reached this guest and
+    # a reply left it. That is the node not dropping v6, evidenced rather than
+    # inferred.
+    ipv6_routable_addr() { printf '2001:db8::5/64\n'; }
+    run ipv6_verdict
+    [ "$output" = FAIL ]
+}
+
+@test "a link-local address alone is not a failure, because it is always there" {
+    # The kernel brings one up whether or not anything routes v6. Reading it as
+    # reach would fail every correctly contained VM, which is why the address
+    # check is scoped to global.
+    run ipv6_verdict
+    [ "$output" = PASS ]
+}
+
+@test "a neighbour answering on the link fails even with no v6 address here" {
+    # The case a v4 reading misses entirely: nothing routes v6, every host on the
+    # segment is still reachable at fe80:: and answering for it.
+    ipv6_neighbour_replies() { printf '2\n'; }
+    run ipv6_verdict
+    [ "$output" = FAIL ]
+}
+
+@test "our own reply to our own multicast is not a neighbour" {
+    # We answer ff02::1 too. Counting that reports every contained VM as a
+    # failure, and it is the first thing this probe gets wrong if left alone.
+    out='64 bytes from fe80::1%eth0: icmp_seq=1 ttl=64 time=0.052 ms'
+    run ipv6_replies_from_others "$out" 'fe80::1'
+    [ "$output" = 0 ]
+}
+
+@test "a neighbour's reply alongside our own is counted" {
+    out='64 bytes from fe80::1%eth0: icmp_seq=1 ttl=64 time=0.052 ms
+64 bytes from fe80::99%eth0: icmp_seq=1 ttl=64 time=1.21 ms (DUP!)'
+    run ipv6_replies_from_others "$out" 'fe80::1'
+    [ "$output" = 1 ]
+}
+
+@test "silence from the whole segment counts nobody" {
+    run ipv6_replies_from_others '' 'fe80::1'
+    [ "$output" = 0 ]
+}
+
+@test "a v6 failure fails the whole reach check even when the v4 half passes" {
+    gateway_verdict() { printf 'PASS\n'; }
+    ipv6_neighbour_replies() { printf '1\n'; }
+    run cmd_reach
+    [ "$status" -ne 0 ]
+    [[ "$output" == *FAIL* ]]
+}
+
+@test "an INDETERMINATE v4 half is not overwritten by a v6 failure" {
+    # Both are non-passes and both are reported, but INDETERMINATE is the more
+    # specific thing to have said about the v4 half and survives as the verdict.
+    gateway_verdict() { printf 'INDETERMINATE\n'; }
+    ipv6_neighbour_replies() { printf '1\n'; }
+    run cmd_reach
+    [ "$status" -ne 0 ]
+    [[ "$output" == *INDETERMINATE* ]]
+}
+
+@test "the v6 remedy points at the node, not at a sysctl in the guest" {
+    # Someone reading this failure will reach for disable_ipv6 first. It is the
+    # wrong layer for the same reason the rest of the firewall is not in here.
+    gateway_verdict() { printf 'PASS\n'; }
+    ipv6_neighbour_replies() { printf '1\n'; }
+    run cmd_reach
+    [[ "$output" == *guest* ]]
+}
+
+@test "a probe that could not run is indeterminate, not a pass" {
+    # No ping installed, or no interface to ask on. Nobody answered because
+    # nobody was asked, and the two are not the same reading.
+    ipv6_neighbour_replies() { return 1; }
+    run ipv6_verdict
+    [ "$output" = INDETERMINATE ]
+}
+
+@test "an unrunnable probe still fails a host that has a global v6 address" {
+    # The address needs no probe: it is evidence rather than inference, so the
+    # answer is definite even where nothing could be sent.
+    ipv6_routable_addr() { printf '2001:db8::5/64\n'; }
+    ipv6_neighbour_replies() { return 1; }
+    run ipv6_verdict
+    [ "$output" = FAIL ]
+}
+
+@test "an unrunnable v6 probe fails the reach check rather than passing it" {
+    gateway_verdict() { printf 'PASS\n'; }
+    ipv6_neighbour_replies() { return 1; }
+    run cmd_reach
+    [ "$status" -ne 0 ]
+    [[ "$output" == *INDETERMINATE* ]]
+}
+
+@test "an unrunnable v6 probe names the package that would fix it" {
+    gateway_verdict() { printf 'PASS\n'; }
+    ipv6_neighbour_replies() { return 1; }
+    run cmd_reach
+    [[ "$output" == *iputils-ping* ]]
+}
+
+@test "a v6 FAIL outranks a v6-probe INDETERMINATE for the reported verdict" {
+    # Both are non-passes, but FAIL is definite and INDETERMINATE is not, so a
+    # run that found a neighbour must not be softened by anything.
+    gateway_verdict() { printf 'PASS\n'; }
+    ipv6_neighbour_replies() { printf '1\n'; }
+    run cmd_reach
+    [[ "$output" == *FAIL* ]]
 }
 
 # --- radius report ----------------------------------------------------------

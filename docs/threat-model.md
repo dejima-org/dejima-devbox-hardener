@@ -159,6 +159,41 @@ changes.
 What dejima cannot bound is the devbox VM's own network access, because dejima
 runs inside that VM. That gap is this project's entire subject.
 
+## The LAN boundary is two boundaries
+
+The control aimed at lateral movement is a list of ranges dropped on the
+hypervisor, and a list bounds only what it names. This one named IPv4 ranges
+only, until it was found not to.
+
+That is not the kind of gap where a control turns out weaker than advertised.
+It is the kind where the control does not apply at all, on a path that is open
+by default on every network - including networks with no IPv6 anywhere in them.
+Every Linux host brings up an `fe80::` address on every interface whether or not
+anything routes v6, and a daemon bound to `::` answers on it. So the machine
+beside this one was reachable across the segment with all four DROPs in force,
+`ip -4 route` showed nothing unusual, and `dejima-devbox-audit reach` said
+`PASS`.
+
+**IPv6 has no RFC 1918.** The v4 list works because three ranges cover every
+private network there is. A v6 network is numbered out of a globally routable
+prefix delegated by an ISP, so no equivalent list can be written down here:
+`fc00::/7` catches unique-local addresses most networks do not use and misses
+the prefix a neighbour is actually on. The set cannot be enumerated, so the
+family is dropped whole, on the node, as rule 12 of the security group.
+
+This costs nothing that was being claimed. Internet egress stays unbounded and
+stays over IPv4, for the reasons argued in `proxmox/firewall.fw.template`. What
+rule 12 removes is a second route to the internet and a first route to the LAN.
+
+The audit verifies it the way it verifies the rest, by behaviour: it asks
+`ff02::1` who is on the link and counts the replies that are not its own. A v4
+timeout is ambiguous, because a working firewall and a broken network look alike
+from in here. A v6 silence is not, because both of its causes - dropped at the
+node, or never configured at all - are the outcome wanted, and no service a
+devbox needs lives on that family for the silence to be hiding one. So that half
+needs no positive control. What it does still report separately is a probe that
+could not run at all, which is not containment and is not allowed to read as it.
+
 ## Blast radius by layer
 
 | Layer | Reached by | Radius |
@@ -166,7 +201,7 @@ runs inside that VM. That gap is this project's entire subject.
 | Container | normal operation | the forge credential's scope, mounted paths, and egress to allowlisted domains only |
 | Devbox VM, unprivileged | container escape | everything on the VM the account can read, and **unrestricted egress to the public internet** |
 | Devbox VM, root | escape plus local escalation, or misconfiguration | the whole VM, the same unrestricted internet egress, and **the model API credential** |
-| LAN | any of the above, if unbounded | every host the VM can route to |
+| LAN | any of the above, if unbounded | every host the VM can route to, in either address family |
 | Hypervisor | out of scope | named for completeness |
 
 The jump from row one to row two is the one to read twice, and it is not only
@@ -180,6 +215,38 @@ What this repository contributes is the last two rows: what the compromise can
 spread to, rather than whether it can talk. And it makes every row verifiable
 rather than asserted. `dejima-devbox-audit` is the
 verification: rows four and five by behaviour, rows two and three by inventory.
+
+## Not bounded
+
+Everything above is organised by control, which leaves the reader to assemble
+the negative space themselves. Most will not. So, in one place, what a devbox
+running this is *not* protected from. Each line has its argument somewhere above
+or below; this list exists so that nobody has to go looking to find out whether
+there is one.
+
+- **Exfiltration, and command-and-control.** Egress to the internet is
+  unbounded from the VM, deliberately. A payload out on the VM fetches what it
+  likes and reports to whom it likes. dejima's allowlist bounds this inside the
+  container, and an escape is precisely what leaves it behind.
+- **Container escape.** Deprioritised on purpose. Nothing here separates an
+  escape from root on the VM, and the rejected alternatives are below.
+- **Root on the devbox.** Not prevented. Bounded, stated, and checkable, which
+  is a different claim.
+- **The model API credential.** On this box, and it cannot be moved off,
+  because the proxy that holds it has to read it here. An escape converts "can
+  use the API while this session lasts" into "holds the token".
+- **The two LAN exceptions.** The forge and the resolver are reachable from
+  this VM on the ports listed, by anything on it. "No LAN access" is not
+  literally true and never was.
+- **Inbound exposure.** The node's inbound list is yours to keep short and
+  nothing here checks it. It can only be checked from outside the VM, and this
+  tool does not go looking for things to connect to.
+- **Other people's work.** Out of spec. One person's work per devbox is a
+  condition, not an observation.
+- **History.** The audit reports state. There is no detection and no forensics
+  here, so it will tell you a rule is missing and never that it once was.
+- **The hypervisor itself.** Out of scope, and it is the layer everything above
+  is standing on.
 
 ## Rejected, with reasons
 
@@ -255,6 +322,27 @@ The half worth closing is agent memory, and a Unix account boundary is not what
 closes it. dejima scopes the `projects` and `file-history` mounts, which is
 where that control belongs: in the repository that owns the mount.
 
+**Mirroring the LAN DROPs into IPv6 instead of dropping the family.** Rejected
+because the list cannot be written. There is no v6 range that means "private",
+so the closest anyone can get is dropping `fc00::/7` and leaving the guest able
+to reach every neighbour on the prefix the ISP delegated. A rule set that looks
+symmetrical and covers nothing is worse than the blanket drop, because it reads
+as handled by anyone reviewing it later.
+
+Revisit if the devbox ever genuinely needs IPv6 egress. The work then is to find
+out which prefix your own LAN is on and drop that instead, and to know that the
+prefix changes when the delegation does - so the rule acquires a way to go stale
+that none of the v4 rules have.
+
+**Disabling IPv6 in the guest, with `net.ipv6.conf.all.disable_ipv6`.** Rejected
+for the reason every other control here sits on the node: it is a setting on a
+machine this model assumes an attacker holds root on, and root sets it back.
+
+It is worse than merely ineffective. It would also make the audit's own IPv6
+check pass, so the guest would be certifying its own containment on the strength
+of a setting the guest controls - which is the exact failure the whole
+verify-by-behaviour design exists to avoid.
+
 **Scheduled rollback.** Rejected because it destroys uncommitted work, which is
 the thing a devbox exists to hold. This is the largest single difference from
 the sister project, whose entire containment story is that a runner is rebuilt
@@ -266,6 +354,36 @@ reports state, not history.
 **Changing how dejima runs.** Out of scope in both directions. Container-level
 controls belong in dejima. Where this project needs something from there, it is
 raised there rather than worked around here.
+
+## This page has a date on it
+
+Every argument above is reasoning about a particular idea of what the adversary
+can do, and that idea does not keep. The controls are aimed at a payload nobody
+aimed at this machine and at an agent that can be talked into things, and
+neither of those descriptions has been getting more reassuring.
+
+Hardening designed against the agent of two years ago is not obviously adequate
+against the agent of today, and the honest position is that nobody here can tell
+you where the line is. What can be done is to re-read the reasoning on a
+schedule rather than when something goes wrong.
+
+**Quarterly**, matching dejima's own cadence, and the argument applies harder
+here than there: this is the layer that catches what the layer above fails to
+hold, so it is the one where a stale assumption goes unnoticed longest.
+
+What to check, rather than re-argue:
+
+- the revisit conditions on each entry in "Rejected, with reasons". They are
+  written as facts to look up, not judgements to re-make, so the review is
+  cheap and has an answer;
+- whether the sibling directories dejima mounts host-wide - `tasks`, `plans`,
+  `sessions`, `backups` - have started being loaded into a session's context at
+  startup, which is the property that would make them worth scoping;
+- whether anything has changed about what an escape is worth, since that is the
+  premise the deprioritisation rests on and not a conclusion of it;
+- whether the address families, ports and ranges named on the node still cover
+  what a neighbour of this VM can be addressed by. IPv6 was missing from that
+  list for as long as the list existed, and nothing failed in the meantime.
 
 ## What this repository does not claim
 

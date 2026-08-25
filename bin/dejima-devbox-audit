@@ -19,10 +19,17 @@
 #     it must be unreachable as a destination, while traffic *through* it to
 #     the internet is untouched.
 #
+# That covers IPv4. The second target is ff02::1, the all-nodes link-local
+# multicast address, because the node's DROPs name IPv4 ranges and a guest with
+# IPv6 reach onto the LAN satisfies every check above without any of them
+# noticing. See "the other address family" below.
+#
 # Nothing here is persisted. A file listing what this VM must not reach would
 # be a map of valuable targets kept on the machine most likely to be owned, and
 # would describe topology not otherwise obtainable from here without loud
-# scanning. There is no such file and there should never be one.
+# scanning. There is no such file and there should never be one. Neither target
+# is such a list: the gateway is already in the routing table, and ff02::1 is
+# the same address on every network there has ever been.
 
 set -euo pipefail
 
@@ -92,6 +99,120 @@ gateway_verdict() {
         printf 'PASS\n'
     else
         printf 'INDETERMINATE\n'
+    fi
+}
+
+# --- the other address family -----------------------------------------------
+#
+# Everything above is IPv4 by construction: `ip -4 route`, an IPv4 gateway, and
+# IPv4 ranges dropped on the node. A guest that can reach the LAN over IPv6
+# passes every one of those checks with nothing to show for it, so the question
+# gets asked separately here.
+#
+# It is a different shape of check and deliberately so. There is no positive
+# control, because unlike the v4 case both ways of passing are outcomes worth
+# having - v6 dropped at the node, or v6 never configured at all - and no
+# service a devbox needs lives on this family for the silence to be hiding.
+# What is ruled out is the third case: working v6 reach with rules written only
+# for v4. dejima-ci-hardener argues the same way in its own runner tests.
+
+# Which interface faces the LAN.
+#
+# Read from the v4 default route rather than the v6 one, because where this
+# check is working correctly there is no v6 default route to read - and that is
+# precisely the case it has to keep working in.
+lan_iface() {
+    local dev
+    dev=$(ip -4 route show default 2>/dev/null \
+          | awk '{for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit }}')
+    [ -n "$dev" ] || return 1
+    printf '%s\n' "$dev"
+}
+
+# An IPv6 address on this host that is not link-local, or nothing.
+#
+# Link-local is excluded because it is always there. The kernel brings up an
+# fe80:: address on every interface whether or not anything routes v6, so its
+# presence says nothing and reading it as reach would fail every correctly
+# contained VM.
+#
+# A global or unique-local address is different. It arrived by SLAAC or DHCPv6,
+# which means a router advertisement reached this guest and a reply left it, so
+# v6 is demonstrably not being dropped at the node. No probe needed: the address
+# is the evidence.
+ipv6_routable_addr() {
+    ip -6 -o addr show scope global 2>/dev/null | awk '{print $4; exit}'
+}
+
+# Reply addresses in ping's output that are not ours, counted.
+#
+# Split out from the probe so the decision can be tested without a fake ping on
+# PATH, which is this suite's rule. Excluding our own addresses is the whole of
+# the decision: we answer our own multicast, and counting that would report
+# every contained VM as a failure.
+ipv6_replies_from_others() {  # ipv6_replies_from_others PING_OUTPUT OWN_ADDRS
+    printf '%s\n' "$1" \
+        | sed -n 's/.*bytes from \([0-9a-fA-F:]\{2,\}\).*/\1/p' \
+        | sort -u \
+        | grep -vxF "${2:-::}" \
+        | grep -c . || true
+}
+
+# How many other hosts answer on the link over IPv6.
+#
+# ff02::1 is the all-nodes link-local multicast address and every IPv6 host
+# answers it. Every Linux host is an IPv6 host: the fe80:: address above exists
+# on networks that route no v6 at all, and a daemon bound to :: answers on it.
+# So this finds neighbours that a v4 reading of the network says are not there.
+#
+# It is not the target list this program refuses to keep. ff02::1 is the same
+# address on every network there has ever been, so writing it down describes no
+# topology and leaks nothing about this one.
+#
+# Returns non-zero when the question could not be asked at all, which the caller
+# turns into INDETERMINATE. Printing 0 instead would be the same lie as reading a
+# timeout as a pass: nobody answered because nobody was asked.
+ipv6_neighbour_replies() {
+    local iface out own
+    iface=$(lan_iface) || return 1
+    command -v ping >/dev/null 2>&1 || return 1
+    out=$(timeout "$PROBE_TIMEOUT" ping -6 -n -c 2 -W 1 -I "$iface" ff02::1 2>/dev/null || true)
+    own=$(ip -6 -o addr show 2>/dev/null | awk '{sub(/\/.*/, "", $4); print $4}')
+    ipv6_replies_from_others "$out" "$own"
+}
+
+# FAIL | PASS | INDETERMINATE
+#
+# Three states, but not the three above, and the difference is the point.
+#
+# There, INDETERMINATE is silence this program cannot interpret: a working
+# firewall and a broken network look identical from in here. That ambiguity does
+# not exist on this family. Both of the reasons a segment stays silent over IPv6
+# - dropped at the node, or never configured in the guest - are the outcome
+# wanted, and no service a devbox needs lives here for the silence to be hiding
+# one. So a silent segment is a plain PASS and needs no positive control.
+#
+# What INDETERMINATE means here is that the question was never asked: no `ping`
+# installed, or no interface to ask on. That is not containment, it is an unrun
+# check, and reporting it as a pass is the failure this whole program is built
+# around not committing.
+ipv6_verdict() {
+    local addr replies
+    addr=$(ipv6_routable_addr)
+    # Checked first because it needs no probe. An address is evidence on its own,
+    # so a host with one is FAIL even where nothing could have been asked.
+    if [ -n "$addr" ]; then
+        printf 'FAIL\n'
+        return 0
+    fi
+    if ! replies=$(ipv6_neighbour_replies); then
+        printf 'INDETERMINATE\n'
+        return 0
+    fi
+    if [ "${replies:-0}" -gt 0 ]; then
+        printf 'FAIL\n'
+    else
+        printf 'PASS\n'
     fi
 }
 
@@ -200,7 +321,7 @@ positive_controls_ok() {
 }
 
 cmd_reach() {
-    local verdict rc=0
+    local verdict v6 rc=0
     verdict=$(gateway_verdict) || return $?
     case $verdict in
         PASS)
@@ -224,6 +345,40 @@ cmd_reach() {
             rc=1
             ;;
     esac
+
+    v6=$(ipv6_verdict)
+    case $v6 in
+        PASS)
+            say "PASS: nothing on the LAN answers this VM over IPv6."
+            ;;
+        FAIL)
+            say "FAIL: this VM reaches the LAN over IPv6."
+            say "  The DROPs on the node name IPv4 ranges and match none of this"
+            say "  traffic, so the v4 result above says nothing about it."
+            say "  Add the outbound IPv6 rule - proxmox/README.md section 3, rule"
+            say "  12 - which drops the family whole because IPv6 has no range"
+            say "  list to enumerate the way RFC 1918 does."
+            say "  Disabling IPv6 in the guest is not the same control: that is a"
+            say "  setting root here can put back, and root here is the case."
+            # Only overwrite a pass. INDETERMINATE already means "not a pass" and
+            # is the more specific thing to have said, so it is left standing.
+            if [ "$verdict" = PASS ]; then
+                verdict=FAIL
+            fi
+            rc=1
+            ;;
+        INDETERMINATE)
+            say "INDETERMINATE: the IPv6 question could not be asked."
+            say "  Not a pass. Nothing answered because nothing was sent."
+            say "  Install iputils-ping and run again. dejima-devbox-bootstrap"
+            say "  installs it; a host set up before it did will not have it."
+            if [ "$verdict" = PASS ]; then
+                verdict=INDETERMINATE
+            fi
+            rc=1
+            ;;
+    esac
+
     printf '%s\n' "$verdict"
     return $rc
 }
