@@ -103,6 +103,8 @@ cd ~/dejima && ./install.sh           # dejima's own step, as your own account
 sudo dejima-devbox-audit              # both halves
 sudo dejima-devbox-audit reach        # containment only, what the timer runs
 sudo dejima-devbox-audit radius       # what root here would get
+
+./bin/dejima-devbox-upgrade status    # what this box is missing, from a checkout
 ```
 
 Bootstrap installs what dejima needs from the host - Docker with the `compose`
@@ -154,6 +156,24 @@ specifies DROP.
 map of valuable targets, kept on the machine this project assumes will be owned.
 The audit derives its targets from the routing table and its controls from your
 forge, so there is nothing to type and nothing to leak.
+
+## Versions, and the boxes already out there
+
+This is at **v2**. `VERSION` says so, and `/etc/dejima-devbox/state` says what a
+given devbox is at — two numbers, because the guest half is installed from a
+checkout and the node half is typed into a console, and only one of them is
+knowable from inside the VM.
+
+dejima needs none of this: its containers are short-lived, only the tip of
+`main` is supported, and `git pull` closes any gap. A devbox is pinned to the
+day it was built, and a snapshot restore can move it backwards without anyone
+deciding to. [docs/upgrading.md](docs/upgrading.md) is the process;
+[upgrades/](upgrades/) is one note per version, written for someone standing at
+a console who has not read the diff.
+
+```sh
+./bin/dejima-devbox-upgrade status    # run from a checkout, not the installed copy
+```
 
 ## Tests
 
