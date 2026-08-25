@@ -162,17 +162,17 @@ runs inside that VM. That gap is this project's entire subject.
 ## The LAN boundary is two boundaries
 
 The control aimed at lateral movement is a list of ranges dropped on the
-hypervisor, and a list bounds only what it names. This one named IPv4 ranges
-only, until it was found not to.
+hypervisor, and a list bounds only what it names. So both address families are
+named, separately, because a rule naming an IPv4 range matches no IPv6 traffic
+at all.
 
-That is not the kind of gap where a control turns out weaker than advertised.
-It is the kind where the control does not apply at all, on a path that is open
-by default on every network - including networks with no IPv6 anywhere in them.
-Every Linux host brings up an `fe80::` address on every interface whether or not
-anything routes v6, and a daemon bound to `::` answers on it. So the machine
-beside this one was reachable across the segment with all four DROPs in force,
-`ip -4 route` showed nothing unusual, and `dejima-devbox-audit reach` said
-`PASS`.
+The second family needs covering even on a network that routes no IPv6. Every
+Linux host brings up an `fe80::` address on every interface whether or not
+anything routes v6, and a daemon bound to `::` answers on it. With every private
+IPv4 range dropped and nothing said about v6, the machine beside this one is
+still one `ssh fe80::...%eth0` away, over a path that does not appear in
+`ip -4 route`, does not involve the router, and is invisible to anyone checking
+that the v4 rules are right.
 
 **IPv6 has no RFC 1918.** The v4 list works because three ranges cover every
 private network there is. A v6 network is numbered out of a globally routable
@@ -181,9 +181,10 @@ prefix delegated by an ISP, so no equivalent list can be written down here:
 the prefix a neighbour is actually on. The set cannot be enumerated, so the
 family is dropped whole, on the node, as rule 12 of the security group.
 
-This costs nothing that was being claimed. Internet egress stays unbounded and
-stays over IPv4, for the reasons argued in `proxmox/firewall.fw.template`. What
-rule 12 removes is a second route to the internet and a first route to the LAN.
+This costs nothing that is claimed elsewhere. Internet egress stays unbounded
+and stays over IPv4, for the reasons argued in `proxmox/firewall.fw.template`.
+What rule 12 removes is a second route to the internet and a first route to the
+LAN.
 
 The audit verifies it the way it verifies the rest, by behaviour: it asks
 `ff02::1` who is on the link and counts the replies that are not its own. A v4
@@ -382,8 +383,8 @@ What to check, rather than re-argue:
 - whether anything has changed about what an escape is worth, since that is the
   premise the deprioritisation rests on and not a conclusion of it;
 - whether the address families, ports and ranges named on the node still cover
-  what a neighbour of this VM can be addressed by. IPv6 was missing from that
-  list for as long as the list existed, and nothing failed in the meantime.
+  every way a neighbour of this VM can be addressed. A list bounds only what it
+  names, and nothing fails visibly when it names too little.
 
 ## What this repository does not claim
 
