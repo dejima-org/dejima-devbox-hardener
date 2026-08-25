@@ -109,7 +109,7 @@ before you flip it rather than after.
 | System | Qemu Agent | ✓ — and see the note below, the tick alone does nothing |
 | Disks | Size | 128 GB. A devbox accumulates checkouts, container images and build caches, and it is not rebuilt on a schedule to clear them |
 | CPU | Cores | 4 |
-| CPU | **Type** | **`x86-64-v3` or better — not the default.** See below; the default cannot run one of dejima's two harnesses |
+| CPU | **Type** | **`x86-64-v3` or better — not the default.** See below; the default cannot run at least one of dejima's harnesses, which requires AVX2 capability |
 | Memory | | 16384 MB. dejima builds its image and runs sessions; 8 GB works and is tight |
 | Network | Bridge | your normal bridge |
 | Network | **Firewall** | **✓ — this is the checkbox everything else depends on** |
@@ -126,14 +126,15 @@ channel the agent has nothing to attach to, the Summary pane shows no address,
 `qm shutdown` falls back to hoping ACPI is acted on, and a snapshot of a
 running VM stays crash-consistent.
 
-**The CPU type is the one setting here a guest cannot fix later from inside.**
-Proxmox defaults a new VM to `x86-64-v2-AES`, which tops out at SSE4.2 and has
-no AVX at all. dejima supports Cline as one of its two agent harnesses, and
-Cline's CLI ships as a Bun-embedded compiled binary whose stock build needs
-AVX2. On a v2 guest it dies on SIGILL, exit 132, before printing anything, and
-Cline publishes no baseline build to fall back to. So a devbox left on the
-default runs half of what dejima supports, and the half it cannot run fails
-silently.
+**AVX2 is needed if you want support for Cline.** Proxmox defaults a new VM to
+`x86-64-v2-AES`, which tops out at SSE4.2 and has no AVX at all. The Cline
+harness's CLI ships as a Bun-embedded compiled binary whose stock build needs
+AVX2. You'll need a CPU type which supports AVX2 if you plan to run Cline in the
+VM, and the minimum CPU type which supports this is `x86-64-v3`.
+
+On a v2 guest the binary dies on SIGILL, exit 132, before printing anything, and
+Cline publishes no baseline build to fall back to, so the harness being
+unavailable is not something the failure tells you.
 
 Three ways to get this wrong:
 
