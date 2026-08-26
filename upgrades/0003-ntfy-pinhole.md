@@ -50,9 +50,10 @@ Three things worth re-checking, because they pass day-to-day and cost you later:
 - **A rule permitting the whole subnet** works identically and gives a
   compromised devbox your entire LAN, which is the thing this project exists to
   prevent. It is the shortcut most likely to have been taken at 1am.
-- **A destination that is a shared reverse proxy** reaches every service that
-  proxy serves on that port, not just ntfy. See below — this is the one most
-  likely to be wider than intended without looking wider.
+- **A port shared with other services on the same proxy** reaches all of them,
+  not just ntfy. See below — this is the one most likely to be wider than
+  intended without looking wider, and the one worth fixing even if the rule is
+  otherwise correct.
 
 ## The rule
 
@@ -83,25 +84,33 @@ echo "port: ${hostport##*:}"          # prints the host again if none is set, me
 getent hosts "${hostport%%:*}"        # the address the rule needs
 ```
 
-## What it costs, and it is probably more than ntfy
+## Give ntfy its own port on the proxy
 
-This rule matches an address and a port and nothing else. Proxmox cannot filter
-by hostname; a reverse proxy routes *by* hostname. So if the destination is a
-shared proxy — which is the usual way a self-hosted ntfy is reached —
-**the rule reaches every service that proxy serves on that port.** A compromised
-devbox chooses its own `Host` header and the firewall cannot tell.
+This is the part worth reading even if you already added the rule.
 
-So the blast radius is whatever is behind that proxy on that port, and it grows
-silently whenever a route is added there for some unrelated reason.
+The rule matches an address and a port and nothing else. Proxmox cannot filter
+by hostname; a reverse proxy routes *by* hostname. So if ntfy shares a port with
+other services on that proxy, **the rule reaches all of them** — a compromised
+devbox chooses its own `Host` header and the firewall cannot tell. The blast
+radius is then whatever is behind that port, and it grows silently whenever a
+route is added there for some unrelated reason.
 
-Three ways to make it one service again, in order of preference:
+**One port per service, one rule per port** closes that. The port is enforced on
+the node, where the guest cannot reach it, so the rule grants exactly ntfy and
+the rule list reads as what it claims to be. `proxmox/README.md`,
+["Reaching a service behind a reverse proxy"](../proxmox/README.md#reaching-a-service-behind-a-reverse-proxy),
+is the general form, and it is how any further service you pinhole should be
+added.
 
-- **Give ntfy its own address**, so the rule names one service.
-- **Give ntfy a dedicated port** on the proxy that routes nowhere else.
-- **Accept it, and write down what else is on that port.** That list is the real
-  exposure, and nothing in this repository can see it.
+If you already gave ntfy a shared port, moving it is a proxy-side change and a
+one-line edit here. Worth doing now rather than at the point where the list has
+five entries and nobody remembers which ports are shared.
 
-One host, one port either way.
+Two things to keep true on the proxy, both in dejima's
+`docs/nginx-dejima.conf.example`: a reject `default_server` on each listen, or
+`server_name` isolates nothing; and `$http_host` rather than `$host` on any port
+other than 443, or a service comparing `Origin` against `Host` refuses every
+request.
 
 **It is not a new way to phone home.** Egress to the internet from this VM is
 unbounded by design already, so this widens lateral reach and nothing else. The

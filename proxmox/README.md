@@ -291,68 +291,88 @@ it can read the DROPs. It verifies outbound containment by behaviour, which is
 possible from inside. Inbound exposure can only be checked from outside, by
 trying to connect, and this tool does not go looking for things to connect to.
 
-#### One more, if you use dejima's remote access
+#### Reaching a service behind a reverse proxy
 
-Skip this if you do not. It is the only rule here that exists for a feature of
-another project rather than for this VM's containment, and it is the one most
-likely to be missed, because nothing on this page or the guest-side one goes
-wrong without it.
+Skip this if the forge and the resolver are everything this VM needs on your
+network. Otherwise it is the section that decides whether your pinhole list
+means what it says.
+
+**One port per service, and one rule per port.** That is the whole pattern.
+
+**Why it has to be that way.** A rule here matches an address and a port, and
+nothing else. Proxmox cannot filter by hostname; a reverse proxy routes *by*
+hostname. So a rule naming a shared proxy on a shared port reaches **every
+service behind that port**, not the one you had in mind — a compromised devbox
+picks its own `Host` header and nothing on the node can tell the difference.
+
+That is not a small discrepancy. It means a rule reading "the devbox may reach
+ntfy" actually says "the devbox may reach whatever is on that port today", and
+the second sentence changes without anyone touching the firewall.
+
+**Give each service its own listen port and the discrepancy closes.** The port
+is enforced here, on the node, by something the guest cannot reach, so each rule
+grants exactly one service and this list reads as what it claims to be.
 
 | # | Direction | Action | Protocol | Dest. port | Source / Dest | Why |
 | --- | --- | --- | --- | --- | --- | --- |
-| 6b | out | ACCEPT | tcp | your ntfy's port | **Dest:** what `ntfy_url` resolves to | Session notifications leave the guest |
+| 6b | out | ACCEPT | tcp | ntfy's own port | **Dest:** the proxy | dejima's session notifications |
+| 6c | out | ACCEPT | tcp | *its own port* | **Dest:** the proxy | *the next one, if any* |
 
-Place it with the other pinholes, above the DROPs.
+Same address each time where they share a proxy, a different port each time, and
+**never a second service on a port already listed** — that widens a rule without
+adding one, which is the failure this section exists to prevent.
+
+Place them with the other pinholes, above the DROPs.
+
+##### Two things to keep true on the proxy
+
+Both are in dejima's
+[`docs/nginx-dejima.conf.example`](https://gitbox.branderson.io/dejima/dejima/src/branch/main/docs/nginx-dejima.conf.example),
+and neither is this repository's to enforce — but a rule above is only worth
+what they are:
+
+- **A reject `default_server` on each listen.** nginx picks a block by SNI/Host
+  and falls back to the default for that address and port. Without one,
+  `server_name` isolates nothing and every name resolving there reaches the
+  first block — which puts you back to a port that serves more than you meant.
+- **`$http_host`, not `$host`, on any port other than 443.** `$host` strips the
+  port, so a service comparing `Origin` against `Host` sees `name` where the
+  client sent `name:8443` and refuses every request. dejima's example calls this
+  out for `ttyd` specifically.
+
+##### ntfy, as the worked example
+
+`dejima-notify-watch` is a systemd *user* unit on this VM — not something inside
+a container — so its push leaves the guest and crosses your LAN.
+
+Without rule 6b, dejima's remote access is configured, enabled, and **silently
+sends nothing**. Nothing errors where you are looking. The phone never buzzes,
+and the cause is three documents away in another repository. If you have ever
+configured remote access on a devbox and concluded it did not work, this is why.
 
 **Check whether you need it first.** If `ntfy_url` resolves to a *public*
-address, egress to the internet from this VM is already unbounded and this rule
+address, egress to the internet from this VM is already unbounded and the rule
 is redundant. It is needed when the name resolves to a private address, which is
 the usual arrangement for a self-hosted instance.
 
-**Why it is needed at all.** `dejima-notify-watch` is a systemd *user* unit on
-this VM — not something inside a container — so the push to ntfy leaves the
-guest and crosses your LAN. A private address is one rules 7 to 9 drop.
-
 **Read the address and the port off your own deployment.** Do not assume the
-ntfy host on 443. A self-hosted ntfy usually sits behind a reverse proxy on some
-other port, and in that case the destination here is **the proxy**.
+ntfy host on 443.
 
-**How it fails without this rule is the problem.** Remote access is configured,
-enabled, and sends nothing. Nothing errors where you are looking. The phone
-simply never buzzes, and the cause is three documents away in another
-repository. If you have ever configured dejima's remote access on a devbox and
-concluded it did not work, this is why.
+**If the service has its own access control**, scope this VM's credential to
+what it actually needs. A devbox holding a token that can write to more topics
+than dejima publishes to can send messages that appear to come from your own
+infrastructure; one that can *read* a topic carrying alerts about the devbox
+learns exactly what any monitoring noticed, which is worse.
 
-**What it costs, and the answer is usually bigger than "ntfy".** This rule
-matches an address and a port and nothing else. Proxmox cannot filter by
-hostname; a reverse proxy routes *by* hostname. So if the destination is a
-shared proxy, **this rule reaches every service that proxy serves on that
-port** — a compromised devbox picks its own `Host` header and the firewall
-cannot tell the difference.
+##### What this costs, either way
 
-The blast radius is therefore whatever is behind that proxy on that port. If
-you route several services through one port, they are all in it, and the list
-grows silently every time someone adds a route.
-
-Three ways to make "the ntfy server joins the blast radius" true again, in order
-of preference:
-
-- **Give ntfy its own address**, so the rule names one service.
-- **Give ntfy a dedicated port** on the proxy that routes nowhere else.
-- **Accept it, and write down what else is on that port**, because that list is
-  the real exposure and nothing else in this repository can see it.
-
-One host, one port, either way — do not widen it to the subnet.
+Every host named here joins this VM's blast radius: a compromised devbox can
+reach it and attack whatever answers. One host and one port per rule — do not
+widen either to a subnet or a range.
 
 What it does *not* add is a way to phone home, since egress to the internet from
 this VM is unbounded by design already. This widens lateral reach and nothing
 else.
-
-**If the ntfy server uses access control**, scope this VM's token to the topic
-dejima publishes to and nothing else. A devbox that can write to other topics
-can send messages that appear to come from your own infrastructure; one that can
-*read* a topic carrying alerts about the devbox learns exactly what any
-monitoring noticed, which is worse.
 
 #### Two more, if the VM gets its address by DHCP
 
