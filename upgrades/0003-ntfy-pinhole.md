@@ -35,22 +35,24 @@ Check what you added against the spec rather than assuming they match:
 
 | | Should be |
 | --- | --- |
-| Destination | The ntfy server's address, one host — not a subnet |
-| Protocol / port | `tcp` / the port your ntfy actually serves, usually `443` |
+| Destination | One host — whatever `ntfy_url` resolves to. Not a subnet |
+| Protocol / port | `tcp`, and the port your deployment actually serves. Do not assume 443 |
 | Position | Above the DROPs, with the other pinholes |
 | Direction | `out` only. Nothing needs to reach *in* for this |
 
-If yours is wider than that — a subnet, or no port — narrow it. If it matches,
-you are already at v3 and only need to record it.
+If yours is wider than that, narrow it. If it matches, you are already at v3 and
+only need to record it.
 
-Two specific things worth re-checking, because they are the ones that pass
-day-to-day and cost you later:
+Three things worth re-checking, because they pass day-to-day and cost you later:
 
-- **A rule below the DROPs does nothing**, and pushes would still not arrive, so
-  if this is working you probably got that right.
+- **A rule below the DROPs does nothing**, so if pushes are arriving you got
+  that right already.
 - **A rule permitting the whole subnet** works identically and gives a
   compromised devbox your entire LAN, which is the thing this project exists to
   prevent. It is the shortcut most likely to have been taken at 1am.
+- **A destination that is a shared reverse proxy** reaches every service that
+  proxy serves on that port, not just ntfy. See below — this is the one most
+  likely to be wider than intended without looking wider.
 
 ## The rule
 
@@ -58,25 +60,48 @@ day-to-day and cost you later:
 
 | # | Direction | Action | Protocol | Dest. port | Source / Dest |
 | --- | --- | --- | --- | --- | --- |
-| 6b | out | ACCEPT | tcp | 443 | **Dest:** ntfy server IP |
+| 6b | out | ACCEPT | tcp | your ntfy's port | **Dest:** what `ntfy_url` resolves to |
+
+**Check whether you need it at all first.** If `ntfy_url` resolves to a public
+address, internet egress from this VM is already unbounded and the rule is
+redundant. It is needed when the name resolves to a private address.
 
 Place it with the other pinholes, **above** the DROPs. The console inserts at
 the top, so it will land above them on its own — but drag it into place with the
 other ACCEPTs rather than leaving it first, so the group still reads in the
 order the table documents.
 
-The destination must match the host in `ntfy_url`, under `[remote-access]` in
-`~/.config/dejima/config` on the devbox. Read it off the machine rather than
-recalling it:
+The destination and port must match `ntfy_url`, under `[remote-access]` in
+`~/.config/dejima/config` on the devbox. Read both off the machine rather than
+recalling them — the port in particular, since a reverse proxy often serves
+something other than 443:
 
 ```sh
-getent hosts "$(sed -n 's/^ntfy_url *= *//p' ~/.config/dejima/config | sed -E 's#^https?://##; s#/.*##')"
+url=$(sed -n 's/^ntfy_url *= *//p' ~/.config/dejima/config)
+hostport=${url#*://}; hostport=${hostport%%/*}
+echo "port: ${hostport##*:}"          # prints the host again if none is set, meaning 443
+getent hosts "${hostport%%:*}"        # the address the rule needs
 ```
 
-## What it costs
+## What it costs, and it is probably more than ntfy
 
-**The ntfy server joins this VM's blast radius.** A compromised devbox can reach
-it and attack whatever it runs. One host, one port.
+This rule matches an address and a port and nothing else. Proxmox cannot filter
+by hostname; a reverse proxy routes *by* hostname. So if the destination is a
+shared proxy — which is the usual way a self-hosted ntfy is reached —
+**the rule reaches every service that proxy serves on that port.** A compromised
+devbox chooses its own `Host` header and the firewall cannot tell.
+
+So the blast radius is whatever is behind that proxy on that port, and it grows
+silently whenever a route is added there for some unrelated reason.
+
+Three ways to make it one service again, in order of preference:
+
+- **Give ntfy its own address**, so the rule names one service.
+- **Give ntfy a dedicated port** on the proxy that routes nowhere else.
+- **Accept it, and write down what else is on that port.** That list is the real
+  exposure, and nothing in this repository can see it.
+
+One host, one port either way.
 
 **It is not a new way to phone home.** Egress to the internet from this VM is
 unbounded by design already, so this widens lateral reach and nothing else. The

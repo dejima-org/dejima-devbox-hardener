@@ -300,14 +300,22 @@ wrong without it.
 
 | # | Direction | Action | Protocol | Dest. port | Source / Dest | Why |
 | --- | --- | --- | --- | --- | --- | --- |
-| 6b | out | ACCEPT | tcp | 443 | **Dest:** ntfy server IP | Session notifications leave the guest |
+| 6b | out | ACCEPT | tcp | your ntfy's port | **Dest:** what `ntfy_url` resolves to | Session notifications leave the guest |
 
 Place it with the other pinholes, above the DROPs.
 
+**Check whether you need it first.** If `ntfy_url` resolves to a *public*
+address, egress to the internet from this VM is already unbounded and this rule
+is redundant. It is needed when the name resolves to a private address, which is
+the usual arrangement for a self-hosted instance.
+
 **Why it is needed at all.** `dejima-notify-watch` is a systemd *user* unit on
 this VM — not something inside a container — so the push to ntfy leaves the
-guest and crosses your LAN. A self-hosted ntfy is a private address, which rules
-7 to 9 drop.
+guest and crosses your LAN. A private address is one rules 7 to 9 drop.
+
+**Read the address and the port off your own deployment.** Do not assume the
+ntfy host on 443. A self-hosted ntfy usually sits behind a reverse proxy on some
+other port, and in that case the destination here is **the proxy**.
 
 **How it fails without this rule is the problem.** Remote access is configured,
 enabled, and sends nothing. Nothing errors where you are looking. The phone
@@ -315,11 +323,30 @@ simply never buzzes, and the cause is three documents away in another
 repository. If you have ever configured dejima's remote access on a devbox and
 concluded it did not work, this is why.
 
-**What it costs.** The ntfy server joins this VM's blast radius: a compromised
-devbox can reach it and attack whatever it runs. One host, one port — do not
-widen it to the subnet. What it does *not* add is a way to phone home, since
-egress to the internet from this VM is unbounded by design already. This widens
-lateral reach and nothing else.
+**What it costs, and the answer is usually bigger than "ntfy".** This rule
+matches an address and a port and nothing else. Proxmox cannot filter by
+hostname; a reverse proxy routes *by* hostname. So if the destination is a
+shared proxy, **this rule reaches every service that proxy serves on that
+port** — a compromised devbox picks its own `Host` header and the firewall
+cannot tell the difference.
+
+The blast radius is therefore whatever is behind that proxy on that port. If
+you route several services through one port, they are all in it, and the list
+grows silently every time someone adds a route.
+
+Three ways to make "the ntfy server joins the blast radius" true again, in order
+of preference:
+
+- **Give ntfy its own address**, so the rule names one service.
+- **Give ntfy a dedicated port** on the proxy that routes nowhere else.
+- **Accept it, and write down what else is on that port**, because that list is
+  the real exposure and nothing else in this repository can see it.
+
+One host, one port, either way — do not widen it to the subnet.
+
+What it does *not* add is a way to phone home, since egress to the internet from
+this VM is unbounded by design already. This widens lateral reach and nothing
+else.
 
 **If the ntfy server uses access control**, scope this VM's token to the topic
 dejima publishes to and nothing else. A devbox that can write to other topics
@@ -444,7 +471,7 @@ memory.
 | Rule 1's source | The subnets you administer from | your own devices |
 | Rule 2's source | The subnets a phone is on | your own devices |
 | The forge's hostname | `forge_host` in `/etc/dejima-devbox/config` | `dejima-devbox-bootstrap` asks and writes it |
-| Rule 6b's destination | The host in `ntfy_url`, `[remote-access]` in `~/.config/dejima/config` | `getent hosts <that hostname>` on the VM |
+| Rule 6b's destination **and port** | `ntfy_url`, `[remote-access]` in `~/.config/dejima/config` | `getent hosts <its hostname>` on the VM, and the port out of the URL — not assumed to be 443 |
 
 **Rules 5–6 want the nameserver, not the gateway.** They are the same address
 on plenty of networks, which is exactly what makes this worth saying: using

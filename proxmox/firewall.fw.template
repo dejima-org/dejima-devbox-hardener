@@ -142,19 +142,42 @@ OUT ACCEPT -dest __RESOLVER_IP__ -p tcp -dport 53 -log nolog
 # nothing: no error where the operator is looking, and a phone that never
 # buzzes. See dejima's docs/remote-access.md.
 #
+# FIRST, CHECK WHETHER YOU NEED IT AT ALL. If ntfy_url resolves to a public
+# address, egress to the internet from this VM is already unbounded and this
+# rule is redundant. It is needed when the name resolves to a private address,
+# which is the usual arrangement for a self-hosted instance on your own LAN.
+#
 # One host, one port, like the forge. Do not widen it to the subnet.
 #
-# It puts the ntfy server inside this VM's blast radius, and that is the trade:
-# a compromised devbox can reach it and attack whatever it runs. What it does
-# NOT add is a way to phone home - egress to the internet from this VM is
-# already unbounded and deliberate, so this widens lateral reach and nothing
-# else.
+# READ THE ADDRESS AND PORT OFF YOUR OWN DEPLOYMENT rather than assuming the
+# ntfy host on 443. A self-hosted ntfy usually sits behind a reverse proxy on
+# some other port, so the destination here is normally the PROXY - and what
+# this rule reaches is decided by that proxy, not by ntfy.
 #
-# If you run the ntfy server's own topics under access control, keep this VM's
-# token scoped to the topic dejima publishes to. A devbox that can also write
-# to a security-alert topic can drown or forge alerts about itself, and one
-# that can READ that topic learns what any monitoring did and did not notice.
-OUT ACCEPT -dest __NTFY_IP__ -p tcp -dport 443 -log nolog
+# AND THAT PORT IS THE THING TO THINK ABOUT, because this rule matches an
+# address and a port, and nothing else. Proxmox cannot filter by hostname, and
+# a reverse proxy routes by one. So if the address below is a shared proxy,
+# this rule reaches EVERY SERVICE THAT PROXY SERVES ON THIS PORT, not just
+# ntfy - a compromised devbox picks its own Host header.
+#
+# The blast radius is therefore whatever is behind that proxy on that port, and
+# "the ntfy server" understates it whenever the two differ. Three ways to make
+# the sentence true again, in order of preference:
+#
+#   - give ntfy its own address, so the rule names one service;
+#   - give ntfy a dedicated port on the proxy that routes nowhere else;
+#   - accept it, and write down what else is on that port, because that list
+#     is the actual exposure and it grows whenever someone adds a route.
+#
+# What this does NOT add is a way to phone home. Egress to the internet from
+# this VM is already unbounded and deliberate, so this widens lateral reach and
+# nothing else.
+#
+# If the ntfy server's topics are under access control, keep this VM's token
+# scoped to the topic dejima publishes to. A devbox that can also write to a
+# security-alert topic can drown or forge alerts about itself, and one that can
+# READ that topic learns what any monitoring did and did not notice.
+OUT ACCEPT -dest __NTFY_IP__ -p tcp -dport __NTFY_PORT__ -log nolog
 
 # DHCP: omit this and the IN rule above if the address is static in the guest.
 #
