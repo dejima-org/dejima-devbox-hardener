@@ -132,6 +132,25 @@ on purpose.
 Keeping the old snapshot is keeping a bootable copy of the vulnerability. If you
 have a reason to keep it, name it so that its date is obvious in the list.
 
+## 5. Confirm
+
+```sh
+cd ~/dejima-devbox-hardener
+./bin/dejima-devbox-upgrade status
+```
+
+Both halves at v2, and the node check re-run to confirm the console work is
+still in force.
+
+**From the checkout, not from `$PATH`.** The installed copy at
+`/usr/local/sbin` knows only the upgrades that existed when it was installed, so
+it cannot tell you about a version released since — it says so rather than
+reporting "up to date", but a checkout is the answer that means something.
+
+This is also what to run in six months. `status` re-checks everything already
+recorded, so a rule somebody removes later shows up here rather than in an
+incident.
+
 ## What this does not change
 
 Internet egress. Still unbounded from the VM, still deliberate, and the reason
