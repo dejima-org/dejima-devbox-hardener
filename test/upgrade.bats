@@ -44,7 +44,12 @@ stub_audit() {
 }
 
 @test "an up-to-date host reports nothing outstanding" {
-    write_state guest_version=2 node_version=2 node_asserted=2026-08-25 node_verified=yes
+    # Derived from VERSION, not written as a literal. A version bump should
+    # break the tests that are about versions and no others, and hard-coding
+    # "the current one" here makes every bump fail this for the wrong reason.
+    newest=$(tr -d '[:space:]' < "$REPO/VERSION")
+    write_state "guest_version=$newest" "node_version=$newest" \
+                node_asserted=2026-08-25 node_verified=yes
     run_tool status --no-verify
     [ "$status" -eq 0 ]
     [[ "$output" == *"Nothing. Both halves"* ]]
@@ -166,7 +171,9 @@ stub_audit() {
 
 @test "status confirms a recorded claim the machine still supports" {
     stub_audit 0
-    write_state guest_version=2 node_version=2 node_asserted=2026-08-25 node_verified=yes
+    newest=$(tr -d '[:space:]' < "$REPO/VERSION")
+    write_state "guest_version=$newest" "node_version=$newest" \
+                node_asserted=2026-08-25 node_verified=yes
     run_tool status
     [ "$status" -eq 0 ]
     [[ "$output" == *"in force"* ]]

@@ -49,6 +49,17 @@ lineno() { grep -nE "$1" "$TPL" | head -1 | cut -d: -f1; }
     ! grep -qE '^IN DROP -dest ::/0' "$TPL"
 }
 
+@test "the ntfy pinhole is a single host, above the DROPs" {
+    # Optional, and only for dejima's remote access - but when present it must
+    # be a host and not a subnet. A rule permitting the whole segment works
+    # identically from the operator's point of view and hands a compromised
+    # devbox the LAN, which is the one thing this file exists to prevent.
+    grep -qE '^OUT ACCEPT -dest __NTFY_IP__ -p tcp -dport [0-9]+' "$TPL"
+    ntfy=$(grep -nE '^OUT ACCEPT -dest __NTFY_IP__' "$TPL" | head -1 | cut -d: -f1)
+    first_drop=$(lineno '^OUT DROP')
+    [ "$ntfy" -lt "$first_drop" ]
+}
+
 @test "the forge is reachable on both 443 and 22" {
     # 22 is the one a CI runner never needed. A devbox pushes over SSH, and
     # without this rule that push hangs against the DROPs below.

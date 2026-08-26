@@ -291,6 +291,42 @@ it can read the DROPs. It verifies outbound containment by behaviour, which is
 possible from inside. Inbound exposure can only be checked from outside, by
 trying to connect, and this tool does not go looking for things to connect to.
 
+#### One more, if you use dejima's remote access
+
+Skip this if you do not. It is the only rule here that exists for a feature of
+another project rather than for this VM's containment, and it is the one most
+likely to be missed, because nothing on this page or the guest-side one goes
+wrong without it.
+
+| # | Direction | Action | Protocol | Dest. port | Source / Dest | Why |
+| --- | --- | --- | --- | --- | --- | --- |
+| 6b | out | ACCEPT | tcp | 443 | **Dest:** ntfy server IP | Session notifications leave the guest |
+
+Place it with the other pinholes, above the DROPs.
+
+**Why it is needed at all.** `dejima-notify-watch` is a systemd *user* unit on
+this VM — not something inside a container — so the push to ntfy leaves the
+guest and crosses your LAN. A self-hosted ntfy is a private address, which rules
+7 to 9 drop.
+
+**How it fails without this rule is the problem.** Remote access is configured,
+enabled, and sends nothing. Nothing errors where you are looking. The phone
+simply never buzzes, and the cause is three documents away in another
+repository. If you have ever configured dejima's remote access on a devbox and
+concluded it did not work, this is why.
+
+**What it costs.** The ntfy server joins this VM's blast radius: a compromised
+devbox can reach it and attack whatever it runs. One host, one port — do not
+widen it to the subnet. What it does *not* add is a way to phone home, since
+egress to the internet from this VM is unbounded by design already. This widens
+lateral reach and nothing else.
+
+**If the ntfy server uses access control**, scope this VM's token to the topic
+dejima publishes to and nothing else. A devbox that can write to other topics
+can send messages that appear to come from your own infrastructure; one that can
+*read* a topic carrying alerts about the devbox learns exactly what any
+monitoring noticed, which is worse.
+
 #### Two more, if the VM gets its address by DHCP
 
 Skip both if you pinned the address in the guest with `dejima-devbox-static-ip`.
@@ -408,6 +444,7 @@ memory.
 | Rule 1's source | The subnets you administer from | your own devices |
 | Rule 2's source | The subnets a phone is on | your own devices |
 | The forge's hostname | `forge_host` in `/etc/dejima-devbox/config` | `dejima-devbox-bootstrap` asks and writes it |
+| Rule 6b's destination | The host in `ntfy_url`, `[remote-access]` in `~/.config/dejima/config` | `getent hosts <that hostname>` on the VM |
 
 **Rules 5–6 want the nameserver, not the gateway.** They are the same address
 on plenty of networks, which is exactly what makes this worth saying: using
@@ -421,6 +458,14 @@ the forge as its positive control: if the forge answers, packets are moving,
 and a timeout to the gateway means the firewall rather than a broken network.
 Point rules 3–4 at one address and `forge_host` at a name that resolves
 elsewhere and the audit reports INDETERMINATE, which is correct but unhelpful.
+
+**Nothing checks rule 6b**, and that is worth knowing rather than discovering.
+`dejima-devbox-audit` verifies containment — that things which should be
+unreachable are — and a missing pinhole is the opposite shape: something that
+should be reachable and is not. The audit passes either way. The only symptom
+is a phone that stops buzzing, which looks like dejima being broken rather than
+like a firewall rule, so check this one by sending a notification and watching
+for it.
 
 ### Check it, rather than assuming it
 

@@ -123,15 +123,38 @@ IN ACCEPT -p udp -dport 68 -log nolog
 # access" is not literally true: you cannot push without the forge, and the
 # forge's name cannot resolve without a resolver.
 #
-# Two hosts, however many ports. Everything else on your network is dropped
-# below, and every addition here should be weighed against that sentence
-# staying short enough to read.
+# Two hosts, however many ports - three if you add the optional one below.
+# Everything else on your network is dropped below, and every addition here
+# should be weighed against that sentence staying short enough to read.
 OUT ACCEPT -dest __FORGE_IP__ -p tcp -dport 443 -log nolog
 # A devbox pushes over SSH. A CI runner only ever talked to the API, which is
 # why this line has no counterpart there.
 OUT ACCEPT -dest __FORGE_IP__ -p tcp -dport 22 -log nolog
 OUT ACCEPT -dest __RESOLVER_IP__ -p udp -dport 53 -log nolog
 OUT ACCEPT -dest __RESOLVER_IP__ -p tcp -dport 53 -log nolog
+
+# OPTIONAL, and only if you use dejima's remote access. Omit it otherwise.
+#
+# dejima-notify-watch is a systemd USER unit on this VM, not something in a
+# container, so the push to ntfy leaves the guest and crosses the LAN. A
+# self-hosted ntfy is a private address, which the DROPs below cover, so
+# without this line remote access is configured, enabled, and silently sends
+# nothing: no error where the operator is looking, and a phone that never
+# buzzes. See dejima's docs/remote-access.md.
+#
+# One host, one port, like the forge. Do not widen it to the subnet.
+#
+# It puts the ntfy server inside this VM's blast radius, and that is the trade:
+# a compromised devbox can reach it and attack whatever it runs. What it does
+# NOT add is a way to phone home - egress to the internet from this VM is
+# already unbounded and deliberate, so this widens lateral reach and nothing
+# else.
+#
+# If you run the ntfy server's own topics under access control, keep this VM's
+# token scoped to the topic dejima publishes to. A devbox that can also write
+# to a security-alert topic can drown or forge alerts about itself, and one
+# that can READ that topic learns what any monitoring did and did not notice.
+OUT ACCEPT -dest __NTFY_IP__ -p tcp -dport 443 -log nolog
 
 # DHCP: omit this and the IN rule above if the address is static in the guest.
 #
