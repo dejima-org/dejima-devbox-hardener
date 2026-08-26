@@ -40,6 +40,49 @@ routing failure can produce that.
 refusing and produces `FAIL`. That is the safe direction to be wrong in, and it
 is why the template specifies DROP.
 
+## The IPv6 check
+
+`dejima-devbox-audit reach` runs a second check on the other address family and
+reports on it separately. Anything but `PASS` there fails the whole run, even
+when the gateway probe passed.
+
+| Verdict | Means | Exit |
+| --- | --- | --- |
+| `FAIL` | A global or unique-local IPv6 address is configured here, **or** something that was not this VM answered `ff02::1` | 1 |
+| `PASS` | Neither, and the probe ran | 0 |
+| `INDETERMINATE` | The probe could not run: no `ping`, or no interface to ask on | 1 |
+
+**The three states are not the three above.** There, `INDETERMINATE` is silence
+this program cannot interpret, because a working firewall and a broken network
+look identical from inside the VM. That ambiguity does not exist here. Both
+reasons a segment stays silent over IPv6 - dropped at the node, or never
+configured in the guest - are the outcome wanted, and no service a devbox needs
+lives on this family for the silence to be hiding one. So a silent segment is a
+plain `PASS` and there is no positive control, because there is nothing to
+disambiguate.
+
+`INDETERMINATE` here means the question was never asked. `ping` comes from
+`iputils-ping`, which `dejima-devbox-bootstrap` installs and a host set up
+before it did will not have. Nobody answering because nobody was asked is not
+containment, and the one thing this program will not do is call it a pass.
+
+**Why an address is enough on its own.** A global or unique-local address got
+here by SLAAC or DHCPv6, so an advertisement reached this guest and a reply left
+it. That is the node not dropping v6, evidenced rather than inferred. Link-local
+is excluded because the kernel brings one up regardless and its presence says
+nothing.
+
+**Why `ff02::1`.** It is the all-nodes link-local multicast address and every
+IPv6 host answers it - and every Linux host is an IPv6 host, on a network that
+routes no v6 at all. So it finds neighbours a v4 reading says are not there. Our
+own replies are excluded; counting them would fail every contained VM. Like the
+gateway, it is not a target worth writing down: it is the same address on every
+network there has ever been.
+
+**Why this is not the gateway probe with a `-6`.** Where the rule is working
+there is no IPv6 default route to probe, so the check has to work without one.
+It takes its interface from the v4 default route instead.
+
 ## The positive controls
 
 Either one is sufficient:
@@ -53,7 +96,7 @@ Requiring both would turn an unrelated outage into a report that gets ignored.
 
 | Mode | Boundary cost | Maintenance |
 | --- | --- | --- |
-| Static in the guest | None. Four DROPs plus the named exceptions, and no DHCP rules | The address is asserted in two places |
+| Static in the guest | None. Six DROPs plus the named exceptions, and no DHCP rules | The address is asserted in two places |
 | Reserved at the router | Needs both halves of the DHCP pair | One source of truth |
 | Plain DHCP | Same DHCP pair | None, but the address moves |
 

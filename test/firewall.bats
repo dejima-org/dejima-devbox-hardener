@@ -28,10 +28,25 @@ lineno() { grep -nE "$1" "$TPL" | head -1 | cut -d: -f1; }
     [ "$last_accept" -lt "$first_drop" ]
 }
 
-@test "all four dropped ranges are present" {
-    for r in '10\.0\.0\.0/8' '172\.16\.0\.0/12' '192\.168\.0\.0/16' '169\.254\.0\.0/16'; do
+@test "all six dropped ranges are present" {
+    for r in '10\.0\.0\.0/8' '172\.16\.0\.0/12' '192\.168\.0\.0/16' \
+             '169\.254\.0\.0/16' '100\.64\.0\.0/10' '::/0'; do
         grep -qE "^OUT DROP -dest $r" "$TPL"
     done
+}
+
+@test "IPv6 is dropped, because none of the v4 ranges above match any of it" {
+    # The failure this pins is silent from every other angle: the v4 rules can be
+    # entered perfectly and every host on the segment stays reachable at fe80::,
+    # on a network that routes no IPv6 at all.
+    grep -qE '^OUT DROP -dest ::/0' "$TPL"
+}
+
+@test "the outbound policy is the only one that needed IPv6 spelled out" {
+    # policy_in: DROP is a policy rather than a list, so it cannot leave an
+    # address family out. policy_out: ACCEPT can, and did.
+    grep -qE '^policy_in: DROP' "$TPL"
+    ! grep -qE '^IN DROP -dest ::/0' "$TPL"
 }
 
 @test "the forge is reachable on both 443 and 22" {
@@ -58,10 +73,11 @@ lineno() { grep -nE "$1" "$TPL" | head -1 | cut -d: -f1; }
     # Placeholders only. addresses.bats catches leaks repository-wide; this
     # catches a rule that works on the network it was written on and silently
     # on no other.
-    run grep -nE '^(IN|OUT) (ACCEPT|DROP).*-(source|dest) [0-9]' "$TPL"
+    run grep -nE '^(IN|OUT) (ACCEPT|DROP).*-(source|dest) [0-9:]' "$TPL"
     for line in "${lines[@]}"; do
         case "$line" in
             *10.0.0.0/8*|*172.16.0.0/12*|*192.168.0.0/16*|*169.254.0.0/16*) ;;
+            *100.64.0.0/10*|*::/0*) ;;
             *) echo "rule names a literal address: $line"; false ;;
         esac
     done

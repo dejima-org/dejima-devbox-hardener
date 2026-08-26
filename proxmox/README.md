@@ -187,19 +187,19 @@ running.
 
 ## 3. The firewall rules
 
-Ten rules, built once as a **security group** and applied to each devbox. Even
-with one VM, build the group: hand-entered copies are two chances to get the
-ordering wrong and one of them to drift later.
+Twelve rules, built once as a **security group** and applied to each devbox.
+Even with one VM, build the group: hand-entered copies are two chances to get
+the ordering wrong and one of them to drift later.
 
 This is the primary control. Everything else in this repository exists to
 verify it or to explain it.
 
 ### What each part is for
 
-The outbound half is short and does the work. Four DROPs cover every private
-range, and above them sit exceptions for the two hosts this VM genuinely needs:
-your forge and your resolver. That is the bound this whole project states, and
-it does not change however long the inbound list gets.
+The outbound half is short and does the work. Six DROPs cover every address a
+neighbour of this VM can hold, and above them sit exceptions for the two hosts
+it genuinely needs: your forge and your resolver. That is the bound this whole
+project states, and it does not change however long the inbound list gets.
 
 A third joins them if you want dejima's notifications, and it is the one to be
 careful with rather than the DHCP pair: see [One more, if you want dejima's
@@ -226,6 +226,8 @@ subnet named here, every port stated, and no rule added anywhere else.
 | 8 | out | DROP | — | — | **Dest:** `172.16.0.0/12` | |
 | 9 | out | DROP | — | — | **Dest:** `192.168.0.0/16` | The three that matter |
 | 10 | out | DROP | — | — | **Dest:** `169.254.0.0/16` | Link-local, incl. metadata services |
+| 11 | out | DROP | — | — | **Dest:** `100.64.0.0/10` | Carrier-grade NAT, where a tailnet lives |
+| 12 | out | DROP | — | — | **Dest:** `::/0` | IPv6, the whole family |
 
 **Rules 1 and 2 are added once per client subnet.** Phones and laptops sit on
 different wireless networks often enough that assuming one is the wrong
@@ -238,6 +240,47 @@ years before it is suddenly very wrong.
 **Rule 4 is the one a CI runner never needed.** A devbox pushes over SSH. Miss
 it and `git push` hangs against rule 7 rather than failing, which reads as the
 forge being down.
+
+**Rule 11 is for a tailnet.** Tailscale numbers its hosts out of
+`100.64.0.0/10`, which is none of the three RFC 1918 ranges, so without this
+rule a devbox on your tailnet reaches every machine you own anywhere — which is
+a wider network than the one rules 7 to 9 were drawn around, not a narrower one.
+Add it whether or not you run Tailscale today: it costs nothing on a devbox that
+has no overlay, and the day someone installs one is not a day anyone revisits
+the firewall.
+
+#### Rule 12, and why IPv6 is dropped whole
+
+Rules 7 to 11 work because the protected set is enumerable. RFC 1918 named three
+ranges, your LAN is inside them, and the list is short enough to read.
+
+**IPv6 has no RFC 1918.** A v6 network is numbered out of a globally routable
+prefix delegated by your ISP, so there is no equivalent list to write down.
+Dropping `fc00::/7` catches unique-local addresses most networks do not use and
+misses the prefix your actual neighbour is on. Since the set cannot be
+enumerated, the family goes.
+
+This costs a devbox nothing. The internet is still reached over IPv4 by the
+default policy, unbounded and on purpose. Rule 12 removes a second path to the
+same place, not the only path.
+
+It is worth having even if you are certain your network has no IPv6. Every Linux
+host brings up an `fe80::` address on every interface whether or not anything
+routes v6, and a daemon bound to `::` answers on it. Without rule 12, rules 7 to
+11 can all be in force and the machine beside this one is still one
+`ssh fe80::...%eth0` away. That path does not show up in `ip -4 route`, does not
+involve your router, and is invisible to anyone checking the v4 rules are right.
+
+**Do not do this in the guest instead.** `net.ipv6.conf.all.disable_ipv6=1` looks
+equivalent and is not: it is a setting on a machine this whole file assumes an
+attacker holds root on, and root can set it back. The rule belongs on the node
+for the same reason every other rule here does.
+
+If the console rejects `::/0`, the same coverage is four rules — `fe80::/10`,
+`fc00::/7`, `ff00::/8`, `2000::/3` — placed together in rule 12's position.
+Prefer the single line: four entries are four chances to enter three.
+
+`dejima-devbox-audit reach` checks this one by behaviour, like the rest.
 
 #### Why the front door gets the narrower list
 
@@ -266,7 +309,7 @@ construction:
 #### What this list does not bound
 
 Adding a client subnet widens **who can reach this VM**. It does not widen what
-this VM can reach, which is the bound rules 7 to 10 fix and the one this
+this VM can reach, which is the bound rules 7 to 12 fix and the one this
 project exists to state. The two are different axes and conflating them leads
 to refusing a harmless convenience.
 
@@ -570,15 +613,24 @@ nothing:
 # what is actually loaded right now
 sudo iptables -S | grep "tap<vmid>i0"
 
+# the same, for the other address family. Rule 12 lands here and nowhere else
+sudo ip6tables -S | grep "tap<vmid>i0"
+
 # what Proxmox would generate from the current config
 sudo pve-firewall compile | grep -B2 -A20 "tap<vmid>i0"
 ```
 
+**Run both, not just the first.** A rule with an IPv6 destination is compiled
+into `ip6tables` and is absent from `iptables -S` — so checking only the v4
+table shows rule 12 missing whether it is there or not, and shows it identically
+either way.
+
 **What you are looking for.** Proxmox names the per-VM chains after the tap
 interface — `tap<vmid>i0-IN` and `tap<vmid>i0-OUT` for the first NIC — and
-your rules appear inside them, in the order you added them. In the `-OUT`
-chain that means the four pinhole ACCEPTs first, then the four LAN DROPs,
-then whatever Proxmox appends for the policy.
+your rules appear inside them, in the order you added them. In the v4 `-OUT`
+chain that means the four pinhole ACCEPTs first, then the five LAN DROPs, then
+whatever Proxmox appends for the policy. The v6 `-OUT` chain holds rule 12 and
+none of the pinholes, because every one of them names an IPv4 address.
 
 **What each failure looks like.**
 
@@ -588,17 +640,18 @@ then whatever Proxmox appends for the policy.
 | Chains exist but hold none of your rules | The rules are on a different VM id, or were added at datacenter or node level rather than to this VM |
 | A LAN DROP above a pinhole ACCEPT | The ordering trap. The VM will not reach the forge or resolve anything; drag the pinholes above the DROPs |
 | Rules present and correct, DNS still failing | The address in rules 5–6 is not the VM's nameserver. The gateway is the usual wrong answer — see "Values that must agree" |
+| v4 chain right, `ip6tables -S` empty | Rule 12 was not entered, or the console rejected `::/0` and the error was missed. Nothing about the v4 half will look wrong |
 
 `pve-firewall status` is the quicker sanity check of whether the service is
 running and enabled at all, but it says nothing about *these* rules — it is
-the datacenter switch it reports on, not your ten lines.
+the datacenter switch it reports on, not your twelve lines.
 
 **Both commands describe configuration.** They are worth reading, and they are
 not proof: a rule that is loaded and a rule that does what you meant are
 different claims. The checks from inside the VM below are the ones that test
 behaviour, which is why they follow rather than replace this.
 
-and from inside the VM, once it is up. Three of these must succeed and one
+and from inside the VM, once it is up. Three of these must succeed and two
 must fail, which is what makes the set diagnostic rather than reassuring:
 
 ```sh
@@ -606,16 +659,31 @@ try() { timeout 5 bash -c "exec 3<>/dev/tcp/$1/$2" 2>/dev/null \
         && echo "  CONNECTED  $1:$2" || echo "  blocked    $1:$2"; }
 
 gw=$(ip -4 route show default | awk '{print $3; exit}')
+dev=$(ip -4 route show default | awk '{for (i=1;i<NF;i++) if ($i=="dev") print $(i+1); exit}')
 
 try "$gw" 443                  # must be blocked - your own first hop
 try <forge-ip> 443             # must connect
 try deb.debian.org 80          # must connect - the public internet
 getent hosts deb.debian.org && echo "  resolved" || echo "  DNS FAILED"
+
+# must find nobody but this VM - rule 12
+sudo ping -6 -n -c 2 -W 1 -I "$dev" ff02::1
 ```
 
 Nothing here needs installing: `bash` opens a TCP connection on its own and
 `getent` is part of libc, which matters on a machine you have not finished
-setting up yet.
+setting up yet. `ping` is `iputils-ping`, which Debian has by default.
+
+**The last one asks the whole LAN who is there, over IPv6.** `ff02::1` is the
+all-nodes link-local multicast address and every IPv6 host answers it — and
+every Linux host is an IPv6 host, because the `fe80::` address exists whether or
+not the network routes v6. Replies from an address that is not this VM's own
+mean rule 12 is not in force and the segment is reachable over a family none of
+the v4 checks above touch.
+
+Like the gateway probe, it writes down no target: `ff02::1` is the same address
+on every network there has ever been, so naming it describes nothing about
+yours.
 
 **The first probe targets your gateway, deliberately, and not some other host
 on your LAN.** Naming another host would mean writing down something worth
@@ -626,12 +694,15 @@ it sits inside the ranges rules 7 to 10 drop, so with the rules applied it must
 be unreachable *as a destination* while traffic *through* it to the internet is
 untouched.
 
-Read the four together, because the pattern says which thing is wrong:
+Read them together, because the pattern says which thing is wrong:
 
 - **First one connects** → the firewall is not in force at all. Check the
   Network device's Firewall checkbox and the datacenter switch.
 - **Second or third fails while the fourth works** → a pinhole is below the LAN
   DROPs. Check the rule order.
+- **Only the last one finds neighbours** → the v4 half is right and rule 12 is
+  missing. This is the failure that looks like success from every other angle,
+  which is why it has its own probe.
 - **Everything fails** → the VM has no working route or DNS, which is a
   networking problem rather than a firewall one. Note that this also makes the
   first probe's "blocked" meaningless: silence proves nothing when nothing is

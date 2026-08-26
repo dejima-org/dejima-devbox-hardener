@@ -71,6 +71,11 @@ layer grants is [docs/threat-model.md](docs/threat-model.md), including the
 [blast radius by layer](docs/threat-model.md#blast-radius-by-layer) and the
 options that were [rejected, with reasons](docs/threat-model.md#rejected-with-reasons).
 
+The shortest way to find out whether this is the tool you want is
+[Not bounded](docs/threat-model.md#not-bounded), which is the same page's
+negative space collected in one list rather than left to be inferred from what
+each section happens to discuss.
+
 Container escape is deliberately deprioritised. An escape gains root, which is
 more than the container has, and root on this VM is already a row in that table,
 bounded by the same hypervisor firewall however it was reached. So
@@ -138,6 +143,15 @@ is not, and inside the ranges the firewall drops.
 
 A check that reports success when it does not know is worse than no check,
 because it gets believed.
+
+**The IPv6 half has the same three states for different reasons.** It asks the
+segment who is there over IPv6 and counts the answers, and there a silence is
+unambiguous: the node dropped the family, or the guest never had it, and both
+are the outcome wanted. So silence is a plain `PASS` with no positive control.
+`INDETERMINATE` is reserved for the probe not running at all, which is still not
+a pass. It is a separate check because the node's other rules name IPv4 ranges
+and match none of that traffic - see
+[the LAN boundary is two boundaries](docs/threat-model.md#the-lan-boundary-is-two-boundaries).
 
 **A rule that REJECTs rather than DROPs reports `FAIL` even though it is
 working.** `bash`'s `/dev/tcp` cannot tell a rejection from a live host
