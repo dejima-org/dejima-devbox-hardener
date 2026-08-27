@@ -1,85 +1,58 @@
 # Provisioning a devbox on Proxmox
 
-The node-side half: the VM itself and the firewall applied to it. Everything
-here is done in the Proxmox web console.
+The node-side half: the VM, and the firewall applied to it. All of it in the web
+console. The in-VM half is
+[docs/building-a-devbox.md](../docs/building-a-devbox.md), the same on any
+hypervisor.
 
-What happens *inside* the VM is
-[docs/building-a-devbox.md](../docs/building-a-devbox.md), which is the same on
-any hypervisor. Do this page first, then go there.
+## The whole job
 
-That split is deliberate, and so is the console-only rule. A script that runs
-`qm create` and writes into `/etc/pve/firewall/` is exactly the kind of
-artifact people paste into a root shell without reading, and the blast radius
-is the whole node, including every VM on it that has nothing to do with this
-one. The steps below are short enough to follow and specific enough to check.
+Five steps, and the two pages interleave — follow this order rather than either
+page top to bottom.
 
-Nothing on this page asks you to edit a file on the node. Where a console path
-and a file path both exist, this runbook takes the console path even when the
-file would be tidier, because a hand-edited file cannot be checked as you
-follow it and puts the hypervisor's configuration outside the tool's reach.
+| | Do this | Where | Roughly |
+| --- | --- | --- | --- |
+| 1 | Turn the datacenter firewall on | §1 below | one setting |
+| 2 | Create the VM | §2 below | one form |
+| 3 | Install Debian | [guest §1](../docs/building-a-devbox.md#1-install-debian) | the usual |
+| 4 | **Build the rules, apply them, verify** | §3 below | **the substance of this page** |
+| 5 | Finish the guest setup | [guest §2 onward](../docs/building-a-devbox.md#2-addressing-leave-it-on-dhcp-for-now) | one command, then checks |
 
-The in-VM half **is** a script:
-[`bin/dejima-devbox-bootstrap`](../bin/dejima-devbox-bootstrap).
+Then §4 here, whenever you want a snapshot.
 
----
+**Everything except step 4 is short.** Step 4 is twelve firewall rules entered
+into a form, three policy settings, and two verification passes. If you have
+done it before, [the rule table](#build-the-group-once) is the whole of it.
+
+**The rules go on after the OS is installed, not before.** The Debian installer
+takes its address by DHCP whatever you intend to pin it to afterwards, and a
+lease needs a reply back in. Apply the group first, without the DHCP pair from
+§3, and the installer simply has no network — which presents as a broken mirror
+or a dead link, not as a firewall you switched on ten minutes earlier. Ticking
+the Firewall checkbox in §2 is safe on its own.
 
 ## What you are building
 
-A machine you cannot afford to lose, treated as one you might.
+**A machine you cannot afford to lose, treated as one you might.**
 
-That sentence is the whole difference from a CI runner. A runner is built to be
-lost: it is rebuilt from a snapshot on a schedule, so anything that gets into it
-has until the next rollback and no longer. A devbox holds uncommitted work, so a
-rollback on a timer destroys the thing the machine exists to hold. Nothing
+That is the whole difference from a CI runner, which is built to be lost and
+rebuilt from a snapshot on a schedule. A devbox holds uncommitted work, so a
+rollback on a timer destroys the thing the machine exists to hold, and nothing
 reclaims this VM on a cadence.
 
-What follows from that: containment here is the firewall on this page, plus
-keeping the box worth little, plus being able to rebuild it. There is no fourth
-thing, and no scheduled undo.
+What follows: containment here is the firewall on this page, plus keeping the
+box worth little, plus being able to rebuild it. There is no fourth thing.
 
 **The firewall goes on the node, not in the guest.** Root in the VM can flush
 any rule set it can see. It cannot reach one applied to its own tap device.
+dejima's own controls are not a second copy of this — they bound what a
+*session* reaches, and cannot bound what the *VM* reaches, because they run
+inside it.
 
-**dejima's own controls are not a second copy of this.** They bound what a
-session inside the container reaches, and they do that well: the container's
-egress is deny-by-default and it is given the Docker host's address rather than
-the host's subnet, so a session cannot walk your LAN. What they cannot bound is
-what the *VM* reaches, because they run inside it. That gap is what this page
-closes, and it is why this is worth doing even though dejima already firewalls
-itself.
-
-**What this does not prevent.** Root on this VM. Nothing here tries to. What it
-does is make root on this VM worth less: no LAN to move onto, and a machine
-whose rebuild cost you have already paid once. See
-[docs/threat-model.md](../docs/threat-model.md#blast-radius-by-layer) for what
+**It does not prevent root on this VM.** It makes root here worth less: no LAN
+to move onto, and a machine whose rebuild cost you have already paid once.
+[docs/threat-model.md](../docs/threat-model.md#blast-radius-by-layer) has what
 each layer actually grants.
-
----
-
-## What order to do this in
-
-This page and the guest runbook interleave. Doing them strictly in sequence
-does not work, and the reason is worth knowing before you hit it.
-
-1. **§1 and §2 here.** Datacenter firewall on, VM created.
-2. **[Install the OS](../docs/building-a-devbox.md#1-install-debian)**, then
-   come back. That is the guest runbook's §1 and it is the only part of it you
-   need before returning.
-3. **§3 here.** Build the rules and apply them. Both halves of its verification
-   work at this point, including the ones run from inside the VM.
-4. **[The rest of the guest runbook](../docs/building-a-devbox.md#2-addressing-leave-it-on-dhcp-for-now)**,
-   from its §2 onward.
-5. **§4 here** whenever you want a snapshot.
-
-**The rules go on after the OS is installed, not before**, and that ordering is
-load-bearing rather than a matter of taste. The Debian installer takes its
-address by DHCP whatever you intend to pin it to afterwards, and a lease needs
-a reply back in. Apply the group first without the DHCP pair from §3 and the
-installer simply has no network, which presents as a broken mirror or a dead
-link and not as a firewall you switched on ten minutes earlier.
-
-Ticking the Firewall checkbox in §2 is safe on its own. It is the group and the
-policies in §3 that start dropping things.
 
 ---
 
@@ -143,36 +116,28 @@ later visit. That is reason enough to pin it.
 
 ## Now install the OS, then come back
 
-The VM exists and has no operating system. Go to
 **[docs/building-a-devbox.md §1](../docs/building-a-devbox.md#1-install-debian)**,
-install Debian, and return here for §3.
+then return here for §3. Nothing else from that page is needed yet.
 
-Nothing else from the guest runbook is needed yet. Coming back with a booted VM
-is what makes the rest of this page checkable rather than assumed: §3 ends by
-testing the rules from inside, and there is nothing to test from until an OS is
-running.
+§3 ends by testing the rules from inside the VM, and there is nothing to test
+from until an OS is running. That is the whole reason for the detour.
 
 ---
 
 ## 3. The firewall rules
 
+**This is the primary control.** Everything else in this repository exists to
+verify it or explain it.
+
 Twelve rules, built once as a **security group** and applied to each devbox.
-Even with one VM, build the group: hand-entered copies are two chances to get
-the ordering wrong and one of them to drift later.
+Build the group even with one VM: hand-entered copies are two chances to get the
+ordering wrong, and one of them to drift later.
 
-This is the primary control. Everything else in this repository exists to
-verify it or to explain it.
-
-### What each part is for
-
-The outbound half is short and does the work. Six DROPs cover every address a
-neighbour of this VM can hold, and above them sit exceptions for the two hosts
-it genuinely needs: your forge and your resolver. That is the bound this whole
-project states, and it does not change however long the inbound list gets.
-
-The inbound half is the part that grows, because unlike a CI runner a devbox
-offers services you want to reach. Keep it legible rather than short: every
-subnet named here, every port stated, and no rule added anywhere else.
+The outbound half does the work and stays fixed — six DROPs covering every
+address a neighbour can hold, with exceptions above them for the two hosts this
+VM genuinely needs. The inbound half is the part that grows, because unlike a CI
+runner a devbox offers services you want to reach; keep it legible rather than
+short.
 
 ### Build the group once
 
@@ -457,9 +422,14 @@ for it.
 
 ### Check it, rather than assuming it
 
-On the node, with the VM **running** — Proxmox builds these chains around the
-VM's tap device, so a stopped VM has none and their absence would tell you
-nothing:
+**Two passes.** The first reads configuration, the second tests behaviour, and
+only the second is proof: a rule that is loaded and a rule that does what you
+meant are different claims.
+
+#### Pass one, on the node, with the VM running
+
+Proxmox builds these chains around the tap device, so a stopped VM has none and
+their absence would tell you nothing.
 
 ```sh
 # what is actually loaded right now
@@ -472,19 +442,15 @@ sudo ip6tables -S | grep "tap<vmid>i0"
 sudo pve-firewall compile | grep -B2 -A20 "tap<vmid>i0"
 ```
 
-**Run both, not just the first.** A rule with an IPv6 destination is compiled
-into `ip6tables` and is absent from `iptables -S` — so checking only the v4
-table shows rule 12 missing whether it is there or not, and shows it identically
-either way.
+**Both tables, not just the first.** An IPv6 rule compiles into `ip6tables` and
+is absent from `iptables -S`, which shows rule 12 missing whether it is there or
+not.
 
-**What you are looking for.** Proxmox names the per-VM chains after the tap
-interface — `tap<vmid>i0-IN` and `tap<vmid>i0-OUT` for the first NIC — and
-your rules appear inside them, in the order you added them. In the v4 `-OUT`
-chain that means the four pinhole ACCEPTs first, then the five LAN DROPs, then
-whatever Proxmox appends for the policy. The v6 `-OUT` chain holds rule 12 and
-none of the pinholes, because every one of them names an IPv4 address.
-
-**What each failure looks like.**
+**What you are looking for.** Chains named `tap<vmid>i0-IN` and `-OUT`, holding
+your rules in the order you added them. The v4 `-OUT` chain has the four pinhole
+ACCEPTs, then the five LAN DROPs, then whatever Proxmox appends for the policy.
+The v6 `-OUT` chain has rule 12 and no pinholes, since every pinhole names an
+IPv4 address.
 
 | What you see | What it means |
 | --- | --- |
@@ -494,17 +460,12 @@ none of the pinholes, because every one of them names an IPv4 address.
 | Rules present and correct, DNS still failing | The address in rules 5–6 is not the VM's nameserver. The gateway is the usual wrong answer — see "Values that must agree" |
 | v4 chain right, `ip6tables -S` empty | Rule 12 was not entered, or the console rejected `::/0` and the error was missed. Nothing about the v4 half will look wrong |
 
-`pve-firewall status` is the quicker sanity check of whether the service is
-running and enabled at all, but it says nothing about *these* rules — it is
-the datacenter switch it reports on, not your twelve lines.
+`pve-firewall status` reports the datacenter switch, not these rules.
 
-**Both commands describe configuration.** They are worth reading, and they are
-not proof: a rule that is loaded and a rule that does what you meant are
-different claims. The checks from inside the VM below are the ones that test
-behaviour, which is why they follow rather than replace this.
+#### Pass two, from inside the VM
 
-and from inside the VM, once it is up. Three of these must succeed and two
-must fail, which is what makes the set diagnostic rather than reassuring:
+Three must succeed and two must fail. That is what makes the set diagnostic
+rather than reassuring.
 
 ```sh
 try() { timeout 5 bash -c "exec 3<>/dev/tcp/$1/$2" 2>/dev/null \
@@ -522,9 +483,9 @@ getent hosts deb.debian.org && echo "  resolved" || echo "  DNS FAILED"
 sudo ping -6 -n -c 2 -W 1 -I "$dev" ff02::1
 ```
 
-Nothing here needs installing: `bash` opens a TCP connection on its own and
-`getent` is part of libc, which matters on a machine you have not finished
-setting up yet. `ping` is `iputils-ping`, which Debian has by default.
+Nothing needs installing: `bash` opens TCP connections itself, `getent` is part
+of libc, and `ping` ships with Debian — which matters on a machine you have not
+finished setting up yet.
 
 **The last one asks the whole LAN who is there, over IPv6.** Any reply from an
 address that is not this VM's own means rule 12 is not in force, and that the
@@ -626,3 +587,19 @@ Each is reasonable on its own and the set is nobody's decision. Every LAN
 exception belongs in §3's table and nowhere else, so the list can be read in
 one place and pruned in one place. A rule added directly to the VM rather than
 to the group is the one that gets forgotten.
+
+
+## Why there is no script for this page
+
+A script that runs `qm create` and writes into `/etc/pve/firewall/` is exactly
+the kind of artifact people paste into a root shell without reading, and the
+blast radius is the whole node — including every VM on it that has nothing to do
+with this one. So nothing here asks you to edit a file on the node: where a
+console path and a file path both exist, this runbook takes the console path
+even when the file would be tidier, because a hand-edited file cannot be checked
+as you follow it and puts the hypervisor's configuration outside the tool's
+reach.
+
+The in-VM half **is** a script:
+[`bin/dejima-devbox-bootstrap`](../bin/dejima-devbox-bootstrap). The difference
+is what it can reach if it is wrong.
