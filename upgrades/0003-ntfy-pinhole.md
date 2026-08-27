@@ -14,17 +14,15 @@ One optional rule in the console. No guest change, no new snapshot.
 
 ## Why
 
-`dejima-notify-watch` is a systemd *user* unit on the devbox — not something in
-a container — so its push to ntfy leaves the guest and crosses your LAN. A
-self-hosted ntfy is a private address, which rules 7 to 9 drop.
+`dejima-notify-watch` is a systemd *user* unit on the devbox, so its push to
+ntfy crosses your LAN — and a self-hosted ntfy is a private address, which rules
+7 to 9 drop.
 
-The result is that remote access is configured, enabled, and **silently sends
-nothing.** Nothing errors where you are looking. The phone never buzzes, and the
-cause is in another repository's documentation. If you have configured dejima's
-remote access on a devbox and concluded it did not work, this is why.
+So remote access is configured, enabled, and **silently sends nothing**: no
+error anywhere you are looking, and a phone that never buzzes. If you ever
+configured it on a devbox and concluded it did not work, this is why.
 
-This is a gap in what this project documented, not a change of position: the
-rule was always needed and was never written down.
+A gap in what this project documented, not a change of position.
 
 ## If you already added it by hand
 
@@ -86,41 +84,28 @@ getent hosts "${hostport%%:*}"        # the address the rule needs
 
 ## Give ntfy its own port on the proxy
 
-This is the part worth reading even if you already added the rule.
+Worth reading even if you already added the rule.
 
-The rule matches an address and a port and nothing else. Proxmox cannot filter
-by hostname; a reverse proxy routes *by* hostname. So if ntfy shares a port with
-other services on that proxy, **the rule reaches all of them** — a compromised
-devbox chooses its own `Host` header and the firewall cannot tell. The blast
-radius is then whatever is behind that port, and it grows silently whenever a
-route is added there for some unrelated reason.
+The rule matches an address and a port; a reverse proxy routes by hostname. So
+if ntfy shares a port with other services, **the rule reaches all of them** — a
+compromised devbox chooses its own `Host` header and the firewall cannot tell.
+The exposure then grows silently whenever a route is added there for some
+unrelated reason.
 
-**One port per service, one rule per port** closes that. The port is enforced on
-the node, where the guest cannot reach it, so the rule grants exactly ntfy and
-the rule list reads as what it claims to be. `proxmox/README.md`,
-["Reaching a service behind a reverse proxy"](../proxmox/README.md#reaching-a-service-behind-a-reverse-proxy),
-is the general form, and it is how any further service you pinhole should be
-added.
+**One port per service, one rule per port** closes it. The reasoning, and the
+two things to keep true on the proxy, are in `proxmox/README.md`,
+["Reaching a service behind a reverse proxy"](../proxmox/README.md#reaching-a-service-behind-a-reverse-proxy).
+That is also how any further service you pinhole should be added.
 
-If you already gave ntfy a shared port, moving it is a proxy-side change and a
-one-line edit here. Worth doing now rather than at the point where the list has
-five entries and nobody remembers which ports are shared.
+If ntfy is on a shared port today, moving it is a proxy-side change plus a
+one-line edit here. Cheaper now than when the list has five entries and nobody
+remembers which ports are shared.
 
-Two things to keep true on the proxy, both in dejima's
-`docs/nginx-dejima.conf.example`: a reject `default_server` on each listen, or
-`server_name` isolates nothing; and `$http_host` rather than `$host` on any port
-other than 443, or a service comparing `Origin` against `Host` refuses every
-request.
-
-**It is not a new way to phone home.** Egress to the internet from this VM is
-unbounded by design already, so this widens lateral reach and nothing else. The
-threat model draws that distinction and it holds here.
-
-**If your ntfy uses access control**, scope the devbox's token to the topic
-dejima publishes to. A devbox that can write to other topics can send messages
-that appear to come from your own infrastructure. One that can *read* a topic
-carrying alerts about the devbox learns what any monitoring noticed, which is
-worse than being able to write.
+**Scope the credential** to the topic dejima publishes to, if your ntfy has
+access control. A token that can write more widely lets a compromised devbox
+send messages that appear to come from your own infrastructure; one that can
+*read* a topic carrying alerts about the devbox learns what any monitoring
+noticed, which is worse.
 
 ## Check it
 

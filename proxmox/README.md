@@ -216,60 +216,34 @@ the firewall.
 
 #### Rule 12, and why IPv6 is dropped whole
 
-Rules 7 to 11 work because the protected set is enumerable. RFC 1918 named three
-ranges, your LAN is inside them, and the list is short enough to read.
+**IPv6 has no RFC 1918**, so there is no list of private ranges to mirror — the
+family goes whole instead. Worth having even on a network that routes no IPv6,
+because every Linux host answers on `fe80::` regardless. The argument is in
+[the threat model](../docs/threat-model.md#the-lan-boundary-is-two-boundaries)
+and again above `OUT DROP -dest ::/0` in
+[firewall.fw.template](firewall.fw.template).
 
-**IPv6 has no RFC 1918.** A v6 network is numbered out of a globally routable
-prefix delegated by your ISP, so there is no equivalent list to write down.
-Dropping `fc00::/7` catches unique-local addresses most networks do not use and
-misses the prefix your actual neighbour is on. Since the set cannot be
-enumerated, the family goes.
+**Do it here, not with `disable_ipv6` in the guest** — that is a setting root in
+the guest can put back.
 
-This costs a devbox nothing. The internet is still reached over IPv4 by the
-default policy, unbounded and on purpose. Rule 12 removes a second path to the
-same place, not the only path.
-
-It is worth having even if you are certain your network has no IPv6. Every Linux
-host brings up an `fe80::` address on every interface whether or not anything
-routes v6, and a daemon bound to `::` answers on it. Without rule 12, rules 7 to
-11 can all be in force and the machine beside this one is still one
-`ssh fe80::...%eth0` away. That path does not show up in `ip -4 route`, does not
-involve your router, and is invisible to anyone checking the v4 rules are right.
-
-**Do not do this in the guest instead.** `net.ipv6.conf.all.disable_ipv6=1` looks
-equivalent and is not: it is a setting on a machine this whole file assumes an
-attacker holds root on, and root can set it back. The rule belongs on the node
-for the same reason every other rule here does.
-
-If the console rejects `::/0`, the same coverage is four rules — `fe80::/10`,
-`fc00::/7`, `ff00::/8`, `2000::/3` — placed together in rule 12's position.
-Prefer the single line: four entries are four chances to enter three.
+**If the console rejects `::/0`**, enter four rules in rule 12's position
+instead: `fe80::/10`, `fc00::/7`, `ff00::/8`, `2000::/3`. Prefer the single
+line; four entries are four chances to enter three.
 
 `dejima-devbox-audit reach` checks this one by behaviour, like the rest.
 
 #### Why the front door gets the narrower list
 
-The intuition that SSH is the more dangerous of the two is backwards.
+The intuition that SSH is the more dangerous of the two is backwards: same
+capability, weaker gate. Basic auth is a password with no rate limiting, no
+lockout and no second factor; an SSH key has nothing to guess. So the front door
+takes the smaller source range. Argued in full above the inbound rules in
+[firewall.fw.template](firewall.fw.template).
 
-Both put a terminal in front of whoever reaches them, so they do not differ in
-capability. They differ in what stands in front. SSH with public-key auth has
-nothing to guess and nothing to stuff, and is about as attack-resistant as an
-exposed service gets. A web front door behind HTTP basic auth is a password,
-and nginx's basic auth brings no rate limiting, no lockout and no second factor
-unless they are added deliberately.
-
-Same capability behind a weaker gate, so the front door is the higher-risk
-service and takes the smaller source range. Usage tends to land on that split
-anyway: you administer over SSH from whatever device is to hand, and you want
-the front door for a phone, because that is what it is for.
-
-Two cheap improvements to the front door, since it is the weaker side by
-construction:
-
-- `limit_req` on that nginx location, which supplies the rate limiting basic
-  auth does not have;
-- a client certificate, which phones install as a profile and which brings that
-  gate to roughly the strength of an SSH key.
+Two cheap improvements, since it is the weaker side by construction:
+`limit_req` on that nginx location, and a client certificate — which phones
+install as a profile and which brings the gate to roughly the strength of an
+SSH key.
 
 #### What this list does not bound
 
@@ -342,37 +316,24 @@ what they are:
 
 ##### ntfy, as the worked example
 
-`dejima-notify-watch` is a systemd *user* unit on this VM — not something inside
-a container — so its push leaves the guest and crosses your LAN.
+`dejima-notify-watch` is a systemd *user* unit on this VM, so its push crosses
+your LAN. Without rule 6b, dejima's remote access is configured, enabled, and
+**silently sends nothing** — no error anywhere you are looking, and a phone that
+never buzzes.
 
-Without rule 6b, dejima's remote access is configured, enabled, and **silently
-sends nothing**. Nothing errors where you are looking. The phone never buzzes,
-and the cause is three documents away in another repository. If you have ever
-configured remote access on a devbox and concluded it did not work, this is why.
+- **Check whether you need it.** A `ntfy_url` resolving to a *public* address is
+  already covered by unbounded internet egress. Only a private one needs a rule.
+- **Read the address and port off your own deployment.** Do not assume 443.
+- **Scope the credential** to the topic dejima publishes to. A token that can
+  write more widely lets a compromised devbox send messages that appear to come
+  from your own infrastructure; one that can *read* a topic carrying alerts
+  about the devbox learns what any monitoring noticed, which is worse.
 
-**Check whether you need it first.** If `ntfy_url` resolves to a *public*
-address, egress to the internet from this VM is already unbounded and the rule
-is redundant. It is needed when the name resolves to a private address, which is
-the usual arrangement for a self-hosted instance.
+##### What this costs
 
-**Read the address and the port off your own deployment.** Do not assume the
-ntfy host on 443.
-
-**If the service has its own access control**, scope this VM's credential to
-what it actually needs. A devbox holding a token that can write to more topics
-than dejima publishes to can send messages that appear to come from your own
-infrastructure; one that can *read* a topic carrying alerts about the devbox
-learns exactly what any monitoring noticed, which is worse.
-
-##### What this costs, either way
-
-Every host named here joins this VM's blast radius: a compromised devbox can
-reach it and attack whatever answers. One host and one port per rule — do not
-widen either to a subnet or a range.
-
-What it does *not* add is a way to phone home, since egress to the internet from
-this VM is unbounded by design already. This widens lateral reach and nothing
-else.
+Every host named joins this VM's blast radius. One host and one port per rule —
+never a subnet or a range. It widens lateral reach and not the ability to phone
+home, since internet egress is already unbounded by design.
 
 #### Two more, if the VM gets its address by DHCP
 
@@ -424,58 +385,38 @@ of it, so each VM still needs its own:
 | Input Policy | `DROP` |
 | Output Policy | `ACCEPT` |
 
-Inbound denies by default — this VM offers no service anyone should reach, so
-the exceptions are short and knowable. Outbound accepts by default, and the LAN
-is denied explicitly by the group.
-
-That asymmetry is deliberate, and it is worth resisting the obvious-looking
-alternative: deny outbound too, then allow tcp/80, tcp/443 and udp/123. That
-breaks things — apt during a first install, and anything else needing a port
-nobody listed — and each breakage presents as a network fault rather than as a
-firewall rule. It also buys almost nothing: this VM is assumed to be owned by
-an attacker with root, and the guarantee being made is *reaches the internet,
-not your network*, not *reaches only three ports*. Anyone who owns the box
-tunnels over 443 like everybody else.
-
-Deny-by-default earns its keep where the protected set is enumerable, which is
-the LAN. The internet is not, and treating it as though it were gets you a rule
-set that looks strict and only gets in the way.
+Inbound denies by default; outbound accepts by default and the LAN is denied
+explicitly by the group. That asymmetry is deliberate: deny-by-default earns its
+keep where the protected set is enumerable, which the LAN is and the internet is
+not. The argument against inverting it is above `policy_out` in
+[firewall.fw.template](firewall.fw.template).
 
 Then **VM → Firewall → Add → Security Group**, and select
-`dejima-devbox-hardener`. That single entry is the whole rule set, in the order the
-group defines, and it is the only firewall rule the VM needs.
+`dejima-devbox-hardener`. That one entry is the whole rule set. Adding another
+devbox later is the same single step, and the order cannot drift between hosts.
 
-Adding another devbox later is that one step. The ordering below was got right
-once, in one place, and cannot drift between hosts.
+#### The ordering trap
 
-**Order matters within the group, and it is the one thing here that is easy to
-get wrong.**
-Rules are evaluated top to bottom and the first match wins. Your forge and
-your resolver are *inside* the ranges rules 7–10 drop, so if either pinhole
-ends up below them it is dead and the VM cannot reach the forge or resolve
-anything.
+**Rules are evaluated top to bottom and the first match wins.** Your pinholes —
+rules 3 to 6, plus 6b if you added it — name addresses *inside* the ranges
+rules 7 to 12 drop. A pinhole below its DROP is dead, and the VM cannot reach
+its forge or resolve anything.
 
-**The console inserts each new rule at the TOP of the list, not the bottom.** So
-entering the rules in the order they are written above leaves you with them in
-reverse: the four DROPs on top, every pinhole beneath them, and a devbox that
+**The console inserts each new rule at the TOP.** So entering them in table
+order leaves you the reverse: DROPs on top, pinholes beneath, and a devbox that
 cannot reach its forge. Following the table without watching the list is enough
-to produce exactly the failure this section is warning about.
+to produce it.
 
-Two ways through it. **Drag each rule to the bottom as you add it**, which keeps
-the list matching the table at every step and is the easier one to check. Or
-enter them in reverse, from the last row up to the first, and let the insertions
-stack into the right order — quicker, and you are reading the table backwards
-while doing it, which is its own way to get one wrong.
+Two ways through. **Drag each rule to the bottom as you add it**, which keeps
+the list matching the table at every step and is the easier to check. Or enter
+them bottom-up and let the insertions stack into order — quicker, and you are
+reading the table backwards while doing it.
 
-Either way, **read the finished list top to bottom and compare it against the
-table** before you trust it. Nothing else catches this: a dead pinhole looks
-exactly like a working firewall until something tries to reach the forge.
+Either way, **read the finished list top to bottom against the table** before
+you trust it. Nothing else catches this: a dead pinhole looks exactly like a
+working firewall until something tries to reach the forge.
 
-Rules 3–6 are the entire remaining LAN exposure, and they are why "no LAN
-access" is not literally true. Both destinations are pinned to one host, on
-the ports named.
-
-Nothing follows rule 10. The public internet is reached by the default policy.
+Nothing follows rule 12. The public internet is reached by the default policy.
 
 ### Values that must agree
 
@@ -585,25 +526,15 @@ Nothing here needs installing: `bash` opens a TCP connection on its own and
 `getent` is part of libc, which matters on a machine you have not finished
 setting up yet. `ping` is `iputils-ping`, which Debian has by default.
 
-**The last one asks the whole LAN who is there, over IPv6.** `ff02::1` is the
-all-nodes link-local multicast address and every IPv6 host answers it — and
-every Linux host is an IPv6 host, because the `fe80::` address exists whether or
-not the network routes v6. Replies from an address that is not this VM's own
-mean rule 12 is not in force and the segment is reachable over a family none of
-the v4 checks above touch.
+**The last one asks the whole LAN who is there, over IPv6.** Any reply from an
+address that is not this VM's own means rule 12 is not in force, and that the
+segment is reachable over a family none of the checks above it touch.
 
-Like the gateway probe, it writes down no target: `ff02::1` is the same address
-on every network there has ever been, so naming it describes nothing about
-yours.
-
-**The first probe targets your gateway, deliberately, and not some other host
-on your LAN.** Naming another host would mean writing down something worth
-attacking on the machine this page assumes will be owned. The gateway avoids
-that entirely: its address is already in the routing table, so it reveals
-nothing; it is guaranteed to be alive, which an arbitrary address is not; and
-it sits inside the ranges rules 7 to 10 drop, so with the rules applied it must
-be unreachable *as a destination* while traffic *through* it to the internet is
-untouched.
+**Both targets are chosen so that naming them writes nothing down.** The
+gateway is already in the routing table and `ff02::1` is the same on every
+network there has ever been, so neither describes your topology to anyone
+reading this box. [docs/reference.md](../docs/reference.md#the-three-verdicts)
+has why each is the right probe.
 
 Read them together, because the pattern says which thing is wrong:
 
