@@ -66,6 +66,13 @@ policy_in: DROP
 # and IPv6 is the one it is easiest to forget to name. See the last rule.
 policy_out: ACCEPT
 
+# What the POLICIES log, which is not the same question as what the RULES log.
+#
+# Both stay off. A default-ACCEPT outbound policy logging every packet this VM
+# sends would write the machine's entire internet traffic to the node's disk,
+# and the inbound default drops broadcast chatter all day. Neither is a signal.
+#
+# The DROP rules below log individually instead - see the note above them.
 log_level_in: nolog
 log_level_out: nolog
 
@@ -166,15 +173,36 @@ OUT ACCEPT -p udp -dport 67 -log nolog
 
 # --- everything else on your network ----------------------------------------
 # The six lines the whole VM exists to make true.
-OUT DROP -dest 10.0.0.0/8 -log nolog
-OUT DROP -dest 172.16.0.0/12 -log nolog
-OUT DROP -dest 192.168.0.0/16 -log nolog
+#
+# THESE LOG, and they are the only rules here that do.
+#
+# A packet matching one of them is this VM trying to reach your network, which
+# on a working devbox is close to never: its forge and its resolver have
+# pinholes above, and nothing else it does legitimately goes to a private
+# address. So the log is quiet by construction, and a burst in it is the
+# loudest signal a compromised devbox produces.
+#
+# It is also recorded somewhere the guest cannot reach. Every other observation
+# this project makes runs inside the VM, where root can stop it; this one is
+# written by the hypervisor about traffic the hypervisor refused.
+#
+# `info` rather than `warning`: Proxmox writes these to /var/log/pve-firewall.log
+# whatever the level, and the level only decides how loud it looks next to
+# everything else on the node.
+#
+# EXPECT NOISE FOR A WHILE. mDNS to 224.0.0.251, SSDP, NetBIOS and whatever
+# else your segment broadcasts will all land here on a perfectly healthy box.
+# The signal is not that a drop happened; it is a destination this VM has never
+# tried before. Read a week of it before deciding what normal looks like.
+OUT DROP -dest 10.0.0.0/8 -log info
+OUT DROP -dest 172.16.0.0/12 -log info
+OUT DROP -dest 192.168.0.0/16 -log info
 # Link-local, which includes cloud metadata services at 169.254.169.254.
-OUT DROP -dest 169.254.0.0/16 -log nolog
+OUT DROP -dest 169.254.0.0/16 -log info
 # Carrier-grade NAT, which is where Tailscale numbers a tailnet. Without this
 # line "your network" quietly means the LAN and not the overlay, and the
 # overlay is the one that reaches the machines you own somewhere else.
-OUT DROP -dest 100.64.0.0/10 -log nolog
+OUT DROP -dest 100.64.0.0/10 -log info
 
 # IPv6, all of it, and the reason it is one blanket line rather than four more
 # mirroring the ones above.
@@ -205,7 +233,7 @@ OUT DROP -dest 100.64.0.0/10 -log nolog
 # If the console rejects `::/0`, the same coverage is fe80::/10, fc00::/7,
 # ff00::/8 and 2000::/3. Prefer the one line: four are four chances to enter
 # three.
-OUT DROP -dest ::/0 -log nolog
+OUT DROP -dest ::/0 -log info
 
 # Nothing follows. The public internet is reached by the default policy, not
 # by a list of ports - see the note on policy_out above.

@@ -83,9 +83,10 @@ and separating escape from root inside the guest is not.
 sudo ./bin/dejima-devbox-bootstrap    # once, in the guest
 cd ~/dejima && ./install.sh           # dejima's own step, as your own account
 
-sudo dejima-devbox-audit              # both halves
+sudo dejima-devbox-audit              # all three
 sudo dejima-devbox-audit reach        # containment only, what the timer runs
 sudo dejima-devbox-audit radius       # what root here would get
+sudo dejima-devbox-audit drift        # what changed since you last said it was clean
 
 ./bin/dejima-devbox-upgrade status    # what this box is missing, from a checkout
 ```
