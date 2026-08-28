@@ -22,6 +22,7 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 BIN_DIR=${BIN_DIR:-/usr/local/sbin}
 CONF_DIR=${CONF_DIR:-/etc/dejima-devbox}
 UNIT_DIR=${UNIT_DIR:-/etc/systemd/system}
+SHARE_DIR=${SHARE_DIR:-/usr/local/share/dejima-devbox}
 
 docker_group_added=0
 
@@ -46,11 +47,11 @@ writable() { mkdir -p "$1" 2>/dev/null || true; [ -d "$1" ] && [ -w "$1" ]; }
 # ---------------------------------------------------------------------------
 # 1. Prerequisites, before anything that would need the network to work.
 
-for d in "$CONF_DIR" "$BIN_DIR" "$UNIT_DIR"; do
+for d in "$CONF_DIR" "$BIN_DIR" "$UNIT_DIR" "$SHARE_DIR"; do
     # Distinguish "cannot write" from "does not exist": [ -e ] cannot tell an
     # absent directory from an unsearchable one, and reporting the wrong one
     # sends people to reinstall something that is fine.
-    writable "$d" || die "cannot write $d - run with sudo, or set CONF_DIR/BIN_DIR/UNIT_DIR"
+    writable "$d" || die "cannot write $d - run with sudo, or set CONF_DIR/BIN_DIR/UNIT_DIR/SHARE_DIR"
 done
 
 for c in ip timeout getent stat find; do
@@ -311,6 +312,34 @@ mv "$CONF_DIR/config.new" "$CONF_DIR/config"
 install -m 0755 "$SRC/bin/dejima-devbox-audit" "$BIN_DIR/dejima-devbox-audit"
 [ -x "$BIN_DIR/dejima-devbox-audit" ] \
     || die "installed a file which is not executable: $BIN_DIR/dejima-devbox-audit"
+
+install -m 0755 "$SRC/bin/dejima-devbox-upgrade" "$BIN_DIR/dejima-devbox-upgrade"
+
+# The upgrade notes travel with the program, so an operator on a devbox with no
+# checkout can still read what an upgrade asks of them. The installed copy
+# knows only the versions that existed when it ran, and says so rather than
+# reporting "up to date" about versions it has never heard of.
+install -m 0755 -d "$SHARE_DIR/upgrades"
+install -m 0644 "$SRC"/upgrades/*.md "$SHARE_DIR/upgrades/"
+
+# What this host is now at, guest-side.
+#
+# Written from the checkout's VERSION rather than asked, because it records
+# something this program just did rather than something a person remembers. The
+# node half is not written here and cannot be: nothing in this guest can read
+# the hypervisor's rules, which is the entire reason those rules are the
+# primary control. dejima-devbox-upgrade mark-node is where that assertion goes.
+version=$(tr -d '[:space:]' < "$SRC/VERSION")
+[ -n "$version" ] || die "no version in $SRC/VERSION - refusing to record an empty one"
+if [ -r "$CONF_DIR/state" ]; then
+    grep -v '^guest_version=' "$CONF_DIR/state" > "$CONF_DIR/state.new" || true
+else
+    : > "$CONF_DIR/state.new"
+fi
+printf 'guest_version=%s\n' "$version" >> "$CONF_DIR/state.new"
+sort -o "$CONF_DIR/state.new" "$CONF_DIR/state.new"
+chmod 0640 "$CONF_DIR/state.new"
+mv "$CONF_DIR/state.new" "$CONF_DIR/state"
 
 for u in "$SRC"/systemd/*; do
     sed "s|@@BIN_DIR@@|$BIN_DIR|g" "$u" > "$UNIT_DIR/$(basename "$u")"

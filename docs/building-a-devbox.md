@@ -9,7 +9,7 @@ that another hypervisor can be added later without touching a single guest-side
 step.
 
 **They interleave rather than running one after the other**, and that page's
-[order section](../proxmox/README.md#what-order-to-do-this-in) is the
+[order section](../proxmox/README.md#the-whole-job) is the
 authoritative version. In short: do its §1 and §2, come here for §1 below and
 install the OS, go back for its §3, then return here and carry on from §2.
 

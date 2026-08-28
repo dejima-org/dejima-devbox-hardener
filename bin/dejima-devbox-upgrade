@@ -1,0 +1,379 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Brad Anderson
+#
+# What this devbox is missing, and what to do about it.
+#
+# dejima needs nothing like this: its containers are short-lived, only the tip
+# of main is supported, and `git pull` closes any gap that opens. A devbox is a
+# long-lived VM pinned to the moment it was built, with half its controls
+# entered by hand in a hypervisor console that no pull can reach. Nothing about
+# it converges on the current version on its own.
+#
+# TWO VERSIONS ARE TRACKED, NOT ONE, and the reason is the same reason the
+# audit exists at all:
+#
+#   guest_version  written by dejima-devbox-bootstrap when it installs. A
+#                  record of something this repository did, so it is as
+#                  reliable as the install was.
+#   node_version   written by `mark-node`, by an operator saying they did the
+#                  console work. Nothing in the guest can read the
+#                  hypervisor's rules - that is what makes those rules worth
+#                  having - so this is an assertion and is treated as one.
+#
+# Where an upgrade names a verify-node command, that command is run and is
+# allowed to CONTRADICT the assertion. An operator who marked something done
+# and was wrong is the case this is for; an operator who is right loses three
+# seconds.
+#
+# Keeping the two apart is also what makes a snapshot restore legible. Restore
+# an image from before an upgrade and guest_version goes backwards while
+# node_version, living on the hypervisor, does not. A single number would have
+# averaged that into silence.
+
+set -euo pipefail
+
+PROG=${0##*/}
+CONF_DIR=${CONF_DIR:-/etc/dejima-devbox}
+STATE="$CONF_DIR/state"
+SHARE_DIR=${SHARE_DIR:-/usr/local/share/dejima-devbox}
+
+say() { printf '%s\n' "$*" >&2; }
+
+# Where the upgrade notes are, and which kind of copy they are.
+#
+# A checkout is authoritative about what versions exist; an installed copy is
+# not, because it only ever shipped with the notes that existed when it was
+# installed. That distinction is load-bearing: an installed v1 tool would
+# otherwise report "up to date" with total confidence, having never heard of
+# v2. So the kind is reported alongside the answer rather than hidden.
+UPGRADE_DIR=""
+UPGRADE_SRC=""
+find_upgrades() {
+    local self_dir
+    self_dir=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+    if [ -d "$self_dir/../upgrades" ]; then
+        UPGRADE_DIR=$(cd "$self_dir/../upgrades" && pwd)
+        UPGRADE_SRC=checkout
+        return 0
+    fi
+    if [ -d "$SHARE_DIR/upgrades" ]; then
+        UPGRADE_DIR="$SHARE_DIR/upgrades"
+        UPGRADE_SRC=installed
+        return 0
+    fi
+    return 1
+}
+
+# --- the notes --------------------------------------------------------------
+
+note_for() {  # note_for VERSION
+    local f
+    f=$(printf '%s/%04d-*.md' "$UPGRADE_DIR" "$1")
+    # shellcheck disable=SC2086
+    f=$(ls $f 2>/dev/null | head -1) || true
+    [ -n "$f" ] || return 1
+    printf '%s\n' "$f"
+}
+
+# A value from the note's header block.
+#
+# Read only between the first two --- lines, so a line in the prose that
+# happens to look like a key cannot change what the tool does. The prose is
+# written for a person and should not have to watch its wording.
+note_field() {  # note_field FILE KEY
+    sed -n '/^---$/,/^---$/p' "$1" | sed -n "s/^$2: //p" | head -1
+}
+
+known_versions() {
+    # shellcheck disable=SC2012
+    ls "$UPGRADE_DIR" 2>/dev/null \
+        | sed -n 's/^0*\([0-9][0-9]*\)-.*\.md$/\1/p' \
+        | sort -n
+}
+
+newest_version() { known_versions | tail -1; }
+
+# --- state ------------------------------------------------------------------
+
+state_get() {  # state_get KEY
+    local v=""
+    [ -r "$STATE" ] && v=$(sed -n "s/^$1=//p" "$STATE" | tail -1)
+    [ -n "$v" ] || return 1
+    printf '%s\n' "$v"
+}
+
+state_set() {  # state_set KEY VALUE
+    local tmp="$STATE.new" key=$1 value=$2
+    [ -d "$CONF_DIR" ] || install -m 0755 -d "$CONF_DIR"
+    umask 027
+    { [ -r "$STATE" ] && grep -v "^$key=" "$STATE" || true; } > "$tmp"
+    printf '%s=%s\n' "$key" "$value" >> "$tmp"
+    sort -o "$tmp" "$tmp"
+    chmod 0640 "$tmp"
+    mv "$tmp" "$STATE"
+}
+
+# --- verification -----------------------------------------------------------
+
+# Run an upgrade's verify-node command, if it has one.
+#
+# ok        - the command passed, so the console work is in force
+# failed    - it did not, whatever the state file says
+# none      - the upgrade declares no check
+# missing   - it declares one and the command is not installed here
+#
+# `missing` is kept apart from `failed` on purpose. A check that could not run
+# has not found anything, and reporting that as a failure would train an
+# operator to ignore the word.
+verify_node() {  # verify_node VERSION
+    local note cmd
+    note=$(note_for "$1") || { printf 'none\n'; return 0; }
+    cmd=$(note_field "$note" verify-node)
+    [ -n "$cmd" ] || { printf 'none\n'; return 0; }
+    command -v "${cmd%% *}" >/dev/null 2>&1 || { printf 'missing\n'; return 0; }
+    if $cmd >/dev/null 2>&1; then
+        printf 'ok\n'
+    else
+        printf 'failed\n'
+    fi
+}
+
+# --- status -----------------------------------------------------------------
+
+VERIFY=1
+
+cmd_status() {
+    local guest node newest v note rc=0 outstanding=0
+
+    if ! find_upgrades; then
+        say "$PROG: no upgrade notes found."
+        say "  Looked beside this program and in $SHARE_DIR/upgrades."
+        say "  Run this from a checkout of the repository."
+        return 2
+    fi
+    newest=$(newest_version)
+
+    say "== Version =="
+    say ""
+
+    if [ ! -r "$STATE" ]; then
+        # Not assumed to be v1. A host that is genuinely at v1 and a host whose
+        # state file was deleted look identical from here, and choosing the
+        # friendlier reading is how a check comes to be believed when it does
+        # not know.
+        say "  No $STATE, so this host predates version tracking."
+        say "  It is NOT assumed to be v1: an untracked host and a host whose"
+        say "  state file went missing are the same thing from in here."
+        say ""
+        say "  Read upgrades/0001-baseline.md, which says how to establish"
+        say "  where you actually are."
+        say ""
+        say "  Newest version known to this copy: v$newest"
+        return 1
+    fi
+
+    guest=$(state_get guest_version) || guest=""
+    node=$(state_get node_version) || node=""
+
+    say "  guest   ${guest:+v}${guest:-unrecorded}"
+    if [ -n "$node" ]; then
+        say "  node    v$node   asserted $(state_get node_asserted || echo 'date unknown')$(
+            [ "$(state_get node_verified 2>/dev/null || echo no)" = no ] && printf ', UNVERIFIED' || true)"
+    else
+        say "  node    unrecorded"
+    fi
+    say ""
+    say "  notes   $UPGRADE_DIR ($UPGRADE_SRC, newest v$newest)"
+
+    if [ "$UPGRADE_SRC" = installed ]; then
+        say ""
+        say "  This is the installed copy, so it only knows the upgrades that"
+        say "  existed when it was installed. It cannot tell you about a version"
+        say "  released since. Pull the repository and run it from there for an"
+        say "  answer that means anything."
+    fi
+
+    # A guest behind the node is the shape a snapshot restore leaves. Worth
+    # naming, because it is the one direction nobody does on purpose.
+    if [ -n "$guest" ] && [ -n "$node" ] && [ "$guest" -lt "$node" ]; then
+        say ""
+        say "== The guest is behind the node =="
+        say ""
+        say "  guest v$guest, node v$node. The hypervisor's rules are newer than"
+        say "  what is installed here, which is what restoring an old snapshot"
+        say "  looks like - the node half does not roll back with the guest."
+        say "  Re-run dejima-devbox-bootstrap from a current checkout."
+        rc=1
+    fi
+
+    say ""
+    say "== Outstanding =="
+    say ""
+    for v in $(known_versions); do
+        note=$(note_for "$v") || continue
+        local layers title
+        layers=$(note_field "$note" layers)
+        title=$(note_field "$note" title)
+        local need_guest=0 need_node=0
+        case " $layers " in *" guest "*) need_guest=1 ;; esac
+        case " $layers " in *" node "*) need_node=1 ;; esac
+        [ -n "$guest" ] && [ "$v" -le "$guest" ] && need_guest=0
+        [ -n "$node" ] && [ "$v" -le "$node" ] && need_node=0
+        [ "$need_guest" = 0 ] && [ "$need_node" = 0 ] && continue
+
+        outstanding=1
+        rc=1
+        say "  v$v  $title"
+        [ "$need_node" = 1 ]  && say "      node:  console work outstanding"
+        [ "$need_guest" = 1 ] && say "      guest: re-run dejima-devbox-bootstrap from a v$v checkout"
+        [ "$(note_field "$note" snapshot)" = required ] \
+            && say "      snapshot: REQUIRED after this one"
+        say "      $PROG show $v"
+        say ""
+    done
+    [ "$outstanding" = 0 ] && say "  Nothing. Both halves are at v$newest." && say ""
+
+    # Verification last, because it is the slow part and because it reads as a
+    # verdict on everything above it.
+    if [ "$VERIFY" = 1 ] && [ -n "$node" ]; then
+        say "== Node checks =="
+        say ""
+        local any=0
+        for v in $(known_versions); do
+            [ "$v" -le "$node" ] || continue
+            case "$(verify_node "$v")" in
+                ok)      any=1; say "  v$v  in force" ;;
+                failed)  any=1; rc=1
+                         say "  v$v  FAILED. The check for this upgrade does not pass, so its"
+                         say "      console work is not in force whatever the state file says."
+                         say "      $PROG show $v" ;;
+                missing) any=1
+                         say "  v$v  could not check - $(note_field "$(note_for "$v")" verify-node) is not installed here." ;;
+            esac
+        done
+        [ "$any" = 0 ] && say "  None of the recorded upgrades declares a check."
+        say ""
+    fi
+
+    return $rc
+}
+
+# --- show -------------------------------------------------------------------
+
+cmd_show() {
+    local v=${1:?usage: $PROG show VERSION} note
+    find_upgrades || { say "$PROG: no upgrade notes found."; return 2; }
+    note=$(note_for "$v") || {
+        say "$PROG: no upgrade note for v$v."
+        say "  Known here: $(known_versions | tr '\n' ' ')"
+        return 2
+    }
+    cat "$note"
+}
+
+cmd_list() {
+    local v note
+    find_upgrades || { say "$PROG: no upgrade notes found."; return 2; }
+    for v in $(known_versions); do
+        note=$(note_for "$v") || continue
+        printf 'v%-4s %s\n' "$v" "$(note_field "$note" title)"
+    done
+}
+
+# --- mark-node --------------------------------------------------------------
+
+FORCE=0
+
+cmd_mark_node() {
+    local v=${1:?usage: $PROG mark-node VERSION} note result
+
+    find_upgrades || { say "$PROG: no upgrade notes found."; return 2; }
+    note=$(note_for "$v") || { say "$PROG: no upgrade note for v$v."; return 2; }
+
+    result=$(verify_node "$v")
+    case $result in
+        ok)
+            say "$PROG: verified - $(note_field "$note" verify-node) passes."
+            ;;
+        failed)
+            say "$PROG: refusing to record v$v."
+            say ""
+            say "  $(note_field "$note" verify-node) does not pass, so the console work"
+            say "  is not in force. Recording it would put a claim in $STATE"
+            say "  that the machine already contradicts."
+            say ""
+            say "  Run it yourself to see what it says:"
+            say "    $(note_field "$note" verify-node)"
+            say ""
+            say "  If you are sure and the check is wrong - a broken network"
+            say "  makes some of them unreadable - use --force, which records"
+            say "  the assertion and marks it unverified so status keeps saying so."
+            [ "$FORCE" = 1 ] || return 1
+            say ""
+            say "  --force given. Recording it as UNVERIFIED."
+            ;;
+        missing)
+            say "$PROG: cannot check - $(note_field "$note" verify-node) is not installed here."
+            say "  Recording as unverified rather than refusing, because a missing"
+            say "  program is not evidence about your firewall."
+            ;;
+        none)
+            say "$PROG: v$v declares no check, so this is your word for it."
+            ;;
+    esac
+
+    state_set node_version "$v"
+    state_set node_asserted "$(date -u +%F)"
+    state_set node_verified "$([ "$result" = ok ] && echo yes || echo no)"
+    say ""
+    say "Recorded: node_version=$v in $STATE"
+}
+
+# --- main -------------------------------------------------------------------
+
+usage() {
+    cat >&2 <<EOF
+usage: $PROG [status] [--no-verify]
+       $PROG list
+       $PROG show VERSION
+       $PROG mark-node VERSION [--force]
+
+  status      what this host is at, what is outstanding, and whether the
+              node-side work it claims is actually in force
+  list        every upgrade this copy knows about
+  show        an upgrade note in full
+  mark-node   record that the console work for VERSION is done
+
+Run from a checkout for an answer about the current version. The installed
+copy only knows the upgrades that existed when it was installed.
+EOF
+}
+
+main() {
+    local cmd=status args=()
+    for a in "$@"; do
+        case "$a" in
+            --no-verify) VERIFY=0 ;;
+            --force)     FORCE=1 ;;
+            -h|--help)   usage; return 0 ;;
+            -*)          say "$PROG: unknown option: $a"; usage; return 64 ;;
+            *)           args+=("$a") ;;
+        esac
+    done
+    [ "${#args[@]}" -gt 0 ] && { cmd=${args[0]}; args=("${args[@]:1}"); }
+
+    case "$cmd" in
+        status)    cmd_status ;;
+        list)      cmd_list ;;
+        show)      cmd_show "${args[@]:-}" ;;
+        mark-node) cmd_mark_node "${args[@]:-}" ;;
+        *)         say "$PROG: unknown command: $cmd"; usage; return 64 ;;
+    esac
+}
+
+# Sourced by test/upgrade.bats, which replaces the functions that touch the
+# outside world. The :- guard matters under set -u.
+if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
+    main "$@"
+fi
