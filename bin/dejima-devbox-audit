@@ -44,6 +44,15 @@ PROBE_TIMEOUT=${PROBE_TIMEOUT:-3}
 
 say() { printf '%s\n' "$*" >&2; }
 
+# The one-word verdict, for a caller reading stdout.
+#
+# Suppressed on a terminal. It exists so a script - or the collector - can read
+# a result without parsing prose, and a person running this by hand gets it
+# already, spelled out, on the line above. Printed anyway it lands interleaved
+# with the human output, because that goes to stderr and this does not, and
+# reads as debris.
+verdict() { [ -t 1 ] || printf '%s\n' "$1"; }
+
 default_gateway() {
     local gw
     gw=$(ip -4 route show default 2>/dev/null | awk '{print $3; exit}')
@@ -92,13 +101,13 @@ gateway_verdict() {
     for port in "${PROBE_PORTS[@]}"; do
         result=$(probe_tcp "$gw" "$port")
         case $result in
-            open|answered) printf 'FAIL\n'; return 0 ;;
+            open|answered) verdict FAIL; return 0 ;;
         esac
     done
     if positive_controls_ok; then
-        printf 'PASS\n'
+        verdict PASS
     else
-        printf 'INDETERMINATE\n'
+        verdict INDETERMINATE
     fi
 }
 
@@ -202,17 +211,17 @@ ipv6_verdict() {
     # Checked first because it needs no probe. An address is evidence on its own,
     # so a host with one is FAIL even where nothing could have been asked.
     if [ -n "$addr" ]; then
-        printf 'FAIL\n'
+        verdict FAIL
         return 0
     fi
     if ! replies=$(ipv6_neighbour_replies); then
-        printf 'INDETERMINATE\n'
+        verdict INDETERMINATE
         return 0
     fi
     if [ "${replies:-0}" -gt 0 ]; then
-        printf 'FAIL\n'
+        verdict FAIL
     else
-        printf 'PASS\n'
+        verdict PASS
     fi
 }
 
@@ -400,7 +409,7 @@ cmd_reach() {
             ;;
     esac
 
-    printf '%s\n' "$verdict"
+    verdict "$verdict"
     return $rc
 }
 
@@ -686,7 +695,7 @@ cmd_drift() {
         say "  partial and comparing it would invent findings. Run with sudo."
         say ""
         sed 's/^/    /' "$DRIFT_ERRS" | head -3 >&2
-        printf 'INDETERMINATE\n'
+        verdict INDETERMINATE
         rm -rf "$work"
         return 2
     fi
@@ -720,7 +729,7 @@ cmd_drift() {
         say "  changed. Take one on a box you believe is in a known state:"
         say ""
         say "    $PROG drift --accept"
-        printf 'INDETERMINATE\n'
+        verdict INDETERMINATE
         rm -rf "$work"
         return 2
     fi
@@ -766,7 +775,7 @@ cmd_drift() {
     fi
 
     rm -rf "$work"
-    printf '%s\n' "$verdict"
+    verdict "$verdict"
     return $rc
 }
 
