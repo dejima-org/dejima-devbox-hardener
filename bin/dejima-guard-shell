@@ -1,0 +1,43 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Brad Anderson
+#
+# The forced command for dejima-guard's key. Nothing else should run it.
+#
+# A WHITELIST OF TWO EXACT COMMANDS, rather than an expansion that sanitises
+# what arrived. The obvious one-liner does not work and fails in the worst
+# direction:
+#
+#   command="dejima-devbox-audit ${SSH_ORIGINAL_COMMAND##* }"
+#
+# That takes the last word, so `drift --state` becomes `--state`, which is not
+# a subcommand - the guard's drift collection fails on every cycle while `reach`
+# keeps working, so the box looks reachable and only half of it is watched.
+# Whitelisting says what may run instead of trying to describe what may not.
+#
+# SUDO, because the audit needs root. The devbox runbook builds a machine with
+# no root password, so the guard connects as an ordinary account and elevates
+# for exactly these two commands - see docs/building-a-devbox.md for the
+# sudoers line, which names them and grants nothing else.
+#
+# -n so a missing sudoers rule fails immediately rather than blocking on a
+# password prompt no one is at. The guard reads that as the devbox being
+# unreachable, which is wrong but loud; a hang would have it time out every
+# cycle with nothing to show for it.
+
+set -eu
+
+AUDIT=${AUDIT:-/usr/local/sbin/dejima-devbox-audit}
+
+case "${SSH_ORIGINAL_COMMAND:-}" in
+    "dejima-devbox-audit reach")
+        exec sudo -n "$AUDIT" reach ;;
+    "dejima-devbox-audit drift --state")
+        exec sudo -n "$AUDIT" drift --state ;;
+    *)
+        # Named in the refusal on purpose. A guard whose command was rejected
+        # otherwise sees an empty answer, and an empty answer is the one thing
+        # this whole design refuses to read as "nothing to report".
+        echo "dejima-guard-shell: refused: ${SSH_ORIGINAL_COMMAND:-<none>}" >&2
+        exit 64 ;;
+esac

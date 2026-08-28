@@ -126,7 +126,7 @@ Then the rest of this section, in this order: the harness, signed in, and only
 then `install.sh`, which writes its hooks into the state directory that now
 exists.
 
-The credential this creates is the one [§7](#7-keep-the-credentials-off-this-box)
+The credential this creates is the one [§8](#8-keep-the-credentials-off-this-box)
 cannot tell you to move off the box, for the same reason it has to be here: the
 proxy reads it locally.
 
@@ -212,7 +212,75 @@ If it says `FAIL`, the fix is rule 12 on the node, not a sysctl in here. See
 [the threat model](threat-model.md#the-lan-boundary-is-two-boundaries) for why
 that distinction is not pedantry.
 
-## 7. Keep the credentials off this box
+## 7. Let the guard in, if you run one
+
+Skip this if you do not run
+[dejima-guard](https://gitbox.branderson.io/dejima/dejima-guard).
+
+It collects from this box over SSH. Two things make that worth as little as
+possible to whoever eventually takes the guard: a forced command, and a sudoers
+rule naming the same two commands.
+
+**As your own account**, not root — this box has no root password, which is
+what §1 built.
+
+```sh
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+printf 'command="/usr/local/sbin/dejima-guard-shell",no-port-forwarding,no-agent-forwarding,no-pty,no-X11-forwarding %s\n' \
+  "$(cat guard_key.pub)" >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
+
+Then the sudo half, because the audit needs root and you do not want a password
+prompt on a connection nobody is sitting at:
+
+```sh
+sudo tee /etc/sudoers.d/dejima-guard >/dev/null <<'SUDOERS'
+brad ALL=(root) NOPASSWD: /usr/local/sbin/dejima-devbox-audit reach, /usr/local/sbin/dejima-devbox-audit drift --state
+SUDOERS
+sudo chmod 0440 /etc/sudoers.d/dejima-guard
+sudo visudo -c
+```
+
+Substitute your own account for `brad`. `visudo -c` before you log out: a
+sudoers file that will not parse takes sudo down with it, and this box has no
+root password to fall back on.
+
+**Why a wrapper rather than the key naming the audit directly.** The obvious
+line is `command="dejima-devbox-audit ${SSH_ORIGINAL_COMMAND##* }"`, taking the
+last word of what was asked for. It does not work: `drift --state` becomes
+`--state`, which is not a subcommand — so drift collection fails on every cycle
+while `reach` keeps working, and the box looks watched when half of it is not.
+
+`dejima-guard-shell` whitelists the two exact commands instead. Whitelisting
+says what may run; sanitising tries to describe what may not, and gets it wrong
+in ways that are quiet.
+
+**Why the sudoers line names arguments.** `NOPASSWD: /usr/local/sbin/dejima-devbox-audit`
+alone would also permit `drift --accept`, which rewrites the baseline — so a key
+taken off the guard could tell the devbox that whatever is on it now is normal.
+The two exact invocations grant collection and not that.
+
+**Test both halves before relying on them.** A restriction nobody tried is a
+restriction nobody has.
+
+```sh
+ssh -i guard_key you@devbox 'dejima-devbox-audit reach'          # a verdict
+ssh -i guard_key you@devbox 'dejima-devbox-audit drift --state'  # FILE/UNIT/PORT lines
+ssh -i guard_key you@devbox 'cat /etc/shadow'                    # refused: ...
+ssh -i guard_key you@devbox 'dejima-devbox-audit drift --accept' # refused: ...
+```
+
+The last two must print `refused` and nothing else. If they do not, stop and
+fix it: the guard's key is held on a machine that holds the evidence about this
+one, which is a machine somebody wanting to erase that evidence would want.
+
+The node also has to let that host reach port 22 —
+[proxmox/README.md](../proxmox/README.md#one-more-if-you-run-dejima-guard-elsewhere)
+has the rule, and it is unnecessary if the guard is already on your admin
+subnet.
+
+## 8. Keep the credentials off this box
 
 Push with a **deploy token scoped to the repositories this box works on**, not
 with your personal key. The difference shows up exactly once, on the day the box
@@ -271,7 +339,7 @@ was there at the time. And it sits at a **known path with a known name**, which
 makes it one of the easiest things on the box to find and among the first a
 prompt injection or a supply-chain payload would go looking for.
 
-## 8. Keep the kernel and the runtime patched
+## 9. Keep the kernel and the runtime patched
 
 This is the whole of the response to container escape, and it is deliberate. An
 escape gets root, which is more than the container had, and root on this VM is
@@ -290,7 +358,7 @@ kernel fix that is installed but not running is not a fix. That is why
 `dejima-devbox-audit radius` prints the running kernel against the newest
 installed one, and says so when they differ.
 
-## 9. Snapshot again
+## 10. Snapshot again
 
 **VM → Snapshots → Take Snapshot**, named `clean`. No RAM.
 

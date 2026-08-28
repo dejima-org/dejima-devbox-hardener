@@ -293,6 +293,36 @@ it can read the DROPs. It verifies outbound containment by behaviour, which is
 possible from inside. Inbound exposure can only be checked from outside, by
 trying to connect, and this tool does not go looking for things to connect to.
 
+#### One more, if you run dejima-guard elsewhere
+
+[dejima-guard](https://gitbox.branderson.io/dejima/dejima-guard) watches this
+devbox from a machine that is not this devbox. It connects over SSH, so:
+
+| # | Direction | Action | Protocol | Dest. port | Source / Dest | Why |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2b | in | ACCEPT | tcp | 22 | **Source:** the guard's IP | The guard collects over SSH |
+
+**Check whether you need it first.** A guard on the admin subnet is already
+covered by rule 1 and this adds nothing. It is for a guard living somewhere
+else — a container host in another segment, which is where a fleet of them
+tends to be.
+
+**One address, not the subnet it sits on.** The guard is one machine, and
+naming one machine is the point.
+
+**There is no outbound counterpart, and adding one would be a mistake.** The
+guard pulls: it reaches in, and this devbox never reaches out to it. That is
+what lets a guard report on a devbox that has been taken — a box that cannot
+talk to its watcher cannot silence it. A rule added "for symmetry" would give
+that away without looking like it had.
+
+**What it grants is the chance to attempt SSH, not a shell.** The key is
+restricted at the guest end, by a forced command and a sudoers rule that name
+the same two read-only invocations — see
+[§7 of the guest runbook](../docs/building-a-devbox.md#7-let-the-guard-in-if-you-run-one).
+The guard is a machine holding the evidence about this one, so it is worth
+assuming somebody will eventually want it.
+
 #### Two more, if the VM gets its address by DHCP
 
 Skip both if you pinned the address in the guest with `dejima-devbox-static-ip`.

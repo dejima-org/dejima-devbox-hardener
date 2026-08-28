@@ -112,7 +112,7 @@ credential.
 
 That file is on the devbox. An escape onto the devbox is exactly the step that
 converts "can use the API while this session lasts" into "holds the token, and
-can keep using it afterwards from anywhere". It is the one credential §7 of the
+can keep using it afterwards from anywhere". It is the one credential §8 of the
 runbook cannot tell you to move off the machine, because the proxy has to read
 it there.
 
@@ -272,7 +272,7 @@ one that decides it, and its value is measurable: it is worth exactly as much as
 there is on this devbox that the session does not already reach.
 
 On a devbox in spec - one person's work, and
-[§7 of the runbook](building-a-devbox.md#7-keep-the-credentials-off-this-box)
+[§8 of the runbook](building-a-devbox.md#8-keep-the-credentials-off-this-box)
 followed - that set is small but not empty. It holds the working trees of every
 project other than the one the session was launched for, and it holds **the
 model API credential**, which cannot be moved off the box because the host-side
