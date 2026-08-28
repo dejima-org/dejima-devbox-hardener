@@ -176,6 +176,37 @@ stub_state() {
     [ -s "$DRIFT_ERRS" ]
 }
 
+# --- the state emitter, which is what a watcher on another machine reads -----
+
+@test "--state prints the state and compares nothing" {
+    # No baseline needed and none consulted: the watcher keeps that, because a
+    # baseline kept here is one root here can rewrite, and root here is the
+    # case being looked for.
+    stub_state "FILE aaa /etc/one" "UNIT foo.service"
+    run cmd_drift --state
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"FILE aaa /etc/one"* ]]
+    [[ "$output" == *"UNIT foo.service"* ]]
+    [[ "$output" != *CLEAN* ]]
+    [[ "$output" != *INDETERMINATE* ]]
+}
+
+@test "--state still refuses when the state would be partial" {
+    # A watcher diffing a partial state against a full baseline sees a list of
+    # removals and calls it an intruder. The refusal has to survive the emitter.
+    stub_state "FILE aaa /etc/one"
+    drift_state() { printf 'FILE aaa /etc/one\n'; echo "denied" >> "$DRIFT_ERRS"; }
+    run cmd_drift --state
+    [ "$status" -eq 2 ]
+    [[ "$output" == *INDETERMINATE* ]]
+}
+
+@test "--state does not write a baseline" {
+    stub_state "FILE aaa /etc/one"
+    run cmd_drift --state
+    [ ! -e "$BASELINE" ]
+}
+
 # --- exit status ------------------------------------------------------------
 
 @test "all does not lose a drift finding behind a clean reach" {
