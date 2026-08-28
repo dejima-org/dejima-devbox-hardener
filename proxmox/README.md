@@ -7,6 +7,11 @@ hypervisor.
 
 ## The whole job
 
+**Already have a devbox?** This page is for building one. To bring an existing
+box forward, start at
+[Updating](../README.md#updating-an-existing-devbox) instead — the upgrade notes
+name the rules to change rather than having you re-read the table below.
+
 Five steps, and the two pages interleave — follow this order rather than either
 page top to bottom.
 

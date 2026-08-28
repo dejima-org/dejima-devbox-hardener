@@ -16,6 +16,9 @@ install the OS, go back for its §3, then return here and carry on from §2.
 The reason is that the node firewall's rules are checked from inside the VM,
 and there is nothing to check from until an OS is running.
 
+**Already have a devbox?** This page builds one. To bring an existing box
+forward, see [Updating](../README.md#updating-an-existing-devbox).
+
 ---
 
 ## 1. Install Debian

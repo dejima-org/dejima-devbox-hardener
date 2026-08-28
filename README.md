@@ -44,6 +44,7 @@ reach less, and makes that reach something you can check rather than assume.
 | [proxmox/README.md](proxmox/README.md) | **Start here.** The node side: create the VM, apply the firewall. Everything in the web console |
 | [docs/building-a-devbox.md](docs/building-a-devbox.md) | The guest side: install, bootstrap, verify. The same on any hypervisor |
 | [docs/threat-model.md](docs/threat-model.md) | What each layer grants, what was [rejected and why](docs/threat-model.md#rejected-with-reasons), and [what is not bounded](docs/threat-model.md#not-bounded) |
+| [Updating](#updating-an-existing-devbox) | **Already have a devbox?** Check its version and walk the upgrade path |
 
 Do the node side first, through the end of its §3.
 
@@ -149,18 +150,33 @@ map of valuable targets, kept on the machine this project assumes will be owned.
 The audit derives its targets from the routing table and its controls from your
 forge, so there is nothing to type and nothing to leak.
 
-## Versions, and the boxes already out there
+## Updating an existing devbox
 
-`VERSION` is what this checkout ships; `/etc/dejima-devbox/state` is what a
-given devbox is at. **Two numbers**, because the guest half is installed from a
-checkout and the node half is typed into a console, and only one of them is
-knowable from inside the VM.
+**Check what it is at**, from a checkout rather than the installed copy:
 
-dejima needs none of this — short-lived containers, tip of `main` only, `git
-pull` closes any gap. A devbox is pinned to the day it was built, and a snapshot
-restore can move it backwards without anyone deciding to.
-[docs/upgrading.md](docs/upgrading.md) is the process; [upgrades/](upgrades/) is
-one note per version, written for someone at a console who has not read the diff.
+```sh
+git -C ~/dejima-devbox-hardener pull
+cd ~/dejima-devbox-hardener
+./bin/dejima-devbox-upgrade status
+```
+
+That names every version this box is missing. **Do them in order** — each note
+assumes the one before it, and some install what a later one uses.
+
+| | |
+| --- | --- |
+| [upgrades/](upgrades/) | One note per version: the console work, the guest work, and what it costs |
+| [docs/upgrading.md](docs/upgrading.md) | The process, and why the two halves are counted separately |
+
+**From a checkout, not the installed copy.** An installed copy knows only the
+versions that existed when it was installed, and says so rather than reporting
+"up to date" about a version it has never heard of.
+
+Nothing here converges on its own, which is why any of this exists. A devbox is
+pinned to the day it was built, half its controls were typed into a console no
+`git pull` reaches, and a snapshot restore can move it backwards without anyone
+deciding to. dejima needs none of it: short-lived containers, tip of `main`
+only, and a pull closes any gap.
 
 ```sh
 ./bin/dejima-devbox-upgrade status    # run from a checkout, not the installed copy
