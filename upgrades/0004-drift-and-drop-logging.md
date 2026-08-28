@@ -2,6 +2,7 @@
 version: 4
 title: The audit reports what changed, and the node logs what it dropped
 layers: node guest
+downtime: window
 snapshot: required
 ---
 
@@ -114,6 +115,12 @@ sudo tail -f /var/log/pve-firewall.log
 ```
 
 ## 4. Snapshot
+
+**This is the only step here that needs the VM stopped**, and it is the whole of
+this upgrade's `downtime: window`. Everything above it is live-safe: the console
+rules apply without touching the guest, and the guest steps install only what is
+absent. Batch it with any other work needing the box down rather than taking it
+out mid-procedure.
 
 The baseline is guest state, so an older snapshot restores an older baseline or
 none. Neither is dangerous — both fail towards `INDETERMINATE` or a noisy

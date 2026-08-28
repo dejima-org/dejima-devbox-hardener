@@ -2,6 +2,7 @@
 version: 3
 title: A pinhole for dejima's remote-access notifications
 layers: node
+downtime: none
 snapshot: none
 ---
 

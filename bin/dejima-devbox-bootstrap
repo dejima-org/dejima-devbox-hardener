@@ -116,9 +116,31 @@ apt-get update -qq
 # absence has no symptom: without it the audit cannot ask the segment who is
 # reachable over IPv6, which is a check it must then report as INDETERMINATE
 # rather than pass. Cheaper to install than to diagnose.
-apt-get install -y -qq --no-install-recommends \
-    docker.io docker-cli \
-    python3 jq git ca-certificates curl iputils-ping
+# ONLY WHAT IS MISSING, and that is a downtime decision rather than a tidiness
+# one.
+#
+# `apt-get install` on an already-installed package is not a no-op: if the
+# repositories offer a newer version it upgrades, and upgrading docker.io
+# restarts the daemon and kills every running container with it. On a devbox
+# that is somebody's session, mid-task, with no warning - and this program is
+# documented as idempotent and safe to re-run, which is exactly when it would
+# happen.
+#
+# Downtime on a devbox is a scheduled event. It is announced, work is drained
+# first, and it does not arrive as a side effect of a step described as
+# changing nothing. So this installs what is absent and touches nothing else;
+# keeping packages current is `apt upgrade`, in a window somebody chose.
+missing=""
+for pkg in docker.io docker-cli python3 jq git ca-certificates curl iputils-ping; do
+    dpkg-query -W -f='${db:Status-Abbrev}' "$pkg" 2>/dev/null | grep -q '^ii' || missing="$missing $pkg"
+done
+if [ -n "$missing" ]; then
+    say "  installing:$missing"
+    # shellcheck disable=SC2086
+    apt-get install -y -qq --no-install-recommends $missing
+else
+    say "  packages   all present, nothing installed or upgraded"
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
     {

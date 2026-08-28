@@ -112,6 +112,37 @@ files in the home of the account that runs dejima, which it reads from the
 config rather than from `$HOME` - under `sudo` and under the timer that is
 root's, whose home on a devbox holds nothing.
 
+## Updating an existing devbox
+
+**Check what it is at**, from a checkout rather than the installed copy:
+
+```sh
+git -C ~/dejima-devbox-hardener pull
+cd ~/dejima-devbox-hardener
+./bin/dejima-devbox-upgrade status
+```
+
+That names every version this box is missing. **Do them in order** — each note
+assumes the one before it, and some install what a later one uses.
+
+| | |
+| --- | --- |
+| [upgrades/](upgrades/) | One note per version: the console work, the guest work, and what it costs |
+| [docs/upgrading.md](docs/upgrading.md) | The process, and why the two halves are counted separately |
+
+**From a checkout, not the installed copy.** An installed copy knows only the
+versions that existed when it was installed, and says so rather than reporting
+"up to date" about a version it has never heard of.
+
+Nothing here converges on its own, which is why any of this exists. A devbox is
+pinned to the day it was built, half its controls were typed into a console no
+`git pull` reaches, and a snapshot restore can move it backwards without anyone
+deciding to. dejima needs none of it: short-lived containers, tip of `main`
+only, and a pull closes any gap.
+
+```sh
+./bin/dejima-devbox-upgrade status    # run from a checkout, not the installed copy
+```
 ## How it fails
 
 **The firewall is on the hypervisor, so the guest cannot verify it by reading
@@ -149,38 +180,6 @@ specifies DROP.
 map of valuable targets, kept on the machine this project assumes will be owned.
 The audit derives its targets from the routing table and its controls from your
 forge, so there is nothing to type and nothing to leak.
-
-## Updating an existing devbox
-
-**Check what it is at**, from a checkout rather than the installed copy:
-
-```sh
-git -C ~/dejima-devbox-hardener pull
-cd ~/dejima-devbox-hardener
-./bin/dejima-devbox-upgrade status
-```
-
-That names every version this box is missing. **Do them in order** — each note
-assumes the one before it, and some install what a later one uses.
-
-| | |
-| --- | --- |
-| [upgrades/](upgrades/) | One note per version: the console work, the guest work, and what it costs |
-| [docs/upgrading.md](docs/upgrading.md) | The process, and why the two halves are counted separately |
-
-**From a checkout, not the installed copy.** An installed copy knows only the
-versions that existed when it was installed, and says so rather than reporting
-"up to date" about a version it has never heard of.
-
-Nothing here converges on its own, which is why any of this exists. A devbox is
-pinned to the day it was built, half its controls were typed into a console no
-`git pull` reaches, and a snapshot restore can move it backwards without anyone
-deciding to. dejima needs none of it: short-lived containers, tip of `main`
-only, and a pull closes any gap.
-
-```sh
-./bin/dejima-devbox-upgrade status    # run from a checkout, not the installed copy
-```
 
 ## Tests
 

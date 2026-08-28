@@ -271,6 +271,11 @@ cmd_status() {
         [ "$need_guest" = 1 ] && say "      guest: re-run dejima-devbox-bootstrap from a v$v checkout"
         [ "$(note_field "$note" snapshot)" = required ] \
             && say "      snapshot: REQUIRED after this one"
+        # Downtime on a devbox is a scheduled event - announced, with work
+        # drained first - so which upgrades need a window is planning
+        # information, not a footnote inside the note.
+        [ "$(note_field "$note" downtime)" = window ] \
+            && say "      downtime: NEEDS A WINDOW. The rest of it is live-safe"
         say "      $PROG show $v"
         say ""
     done

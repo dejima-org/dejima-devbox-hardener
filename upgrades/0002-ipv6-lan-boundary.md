@@ -2,6 +2,7 @@
 version: 2
 title: The LAN boundary gains IPv6 and the CGNAT range
 layers: node guest
+downtime: window
 snapshot: required
 verify-node: dejima-devbox-audit reach
 ---
@@ -122,6 +123,12 @@ if it does not pass, so the thing being written down has been corroborated
 rather than merely claimed.
 
 ## 4. Snapshot
+
+**This is the only step here that needs the VM stopped**, and it is the whole of
+this upgrade's `downtime: window`. Everything above it is live-safe: the console
+rules apply without touching the guest, and the guest steps install only what is
+absent. Batch it with any other work needing the box down rather than taking it
+out mid-procedure.
 
 **Take a fresh snapshot, and delete the pre-upgrade one.**
 

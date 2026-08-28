@@ -248,7 +248,7 @@ stub_audit() {
 
 @test "every note declares the keys the tool reads" {
     for f in "$REPO"/upgrades/0*.md; do
-        for k in version title layers snapshot; do
+        for k in version title layers snapshot downtime; do
             sed -n '/^---$/,/^---$/p' "$f" | grep -q "^$k: " \
                 || { echo "$f: no '$k' in the header"; false; }
         done
@@ -267,6 +267,27 @@ stub_audit() {
         case " $layers " in *" guest "*) continue ;; esac
         ! grep -qE '^[[:space:]]*(sudo )?dejima-devbox-upgrade ' "$f" \
             || { echo "$f: no guest step installs it, so commands must use ./bin/dejima-devbox-upgrade"; false; }
+    done
+}
+
+@test "an upgrade needing a window says so in status, where it can be planned" {
+    # Downtime on a devbox is a scheduled event: announced, with sessions
+    # drained first. Which upgrades need one is planning information, and an
+    # operator who has to open each note to find out will schedule badly.
+    write_state guest_version=1 node_version=1
+    run_tool status --no-verify
+    [[ "$output" == *"NEEDS A WINDOW"* ]]
+}
+
+@test "a note requiring a snapshot also declares it needs a window" {
+    # A clean snapshot means stopping the VM. A note that asks for one and
+    # calls itself live-safe is wrong about the only part an operator has to
+    # schedule around.
+    for f in "$REPO"/upgrades/0*.md; do
+        head=$(sed -n '/^---$/,/^---$/p' "$f")
+        [ "$(printf '%s' "$head" | sed -n 's/^snapshot: //p')" = required ] || continue
+        [ "$(printf '%s' "$head" | sed -n 's/^downtime: //p')" = window ] \
+            || { echo "$f: requires a snapshot but does not declare a window"; false; }
     done
 }
 
