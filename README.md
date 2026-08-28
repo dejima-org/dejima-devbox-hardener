@@ -29,6 +29,30 @@
 Bounds what a compromised development VM can reach on your network, and tells
 you what that bound actually is.
 
+A devbox is a long-lived VM that runs [dejima](https://gitbox.branderson.io/dejima/dejima)
+sessions. Unlike a CI runner it holds uncommitted work, so it cannot be rolled
+back on a schedule — and rollback is the whole containment story of the sister
+project, [dejima-ci-hardener](https://gitbox.branderson.io/dejima/dejima-ci-hardener).
+What replaces it is the hypervisor firewall, plus knowing precisely what sits
+inside it.
+
+**It does not prevent root on the devbox.** Nothing here tries to. It makes root
+reach less, and makes that reach something you can check rather than assume.
+
+| | |
+| --- | --- |
+| [proxmox/README.md](proxmox/README.md) | **Start here.** The node side: create the VM, apply the firewall. Everything in the web console |
+| [docs/building-a-devbox.md](docs/building-a-devbox.md) | The guest side: install, bootstrap, verify. The same on any hypervisor |
+| [docs/threat-model.md](docs/threat-model.md) | What each layer grants, what was [rejected and why](docs/threat-model.md#rejected-with-reasons), and [what is not bounded](docs/threat-model.md#not-bounded) |
+
+Do the node side first, through the end of its §3.
+
+[![Developed in dejima](assets/dejima-badge.svg)](https://gitbox.branderson.io/dejima/dejima)
+
+---
+
+## Before you use it
+
 **Early development. Not ready to be depended on.** Nothing here has been
 through outside review, an external audit, or adversarial testing by anyone but
 the person who wrote it. Every security property this describes is a claim
@@ -42,57 +66,16 @@ report a vulnerability rather than in a public issue.
 **One person's work per devbox.** A condition of the tool rather than an
 observation about how devboxes get used: the blast radius here is stated in
 terms of what is on the box, so a machine holding several people's work is out
-of spec and the reasoning in
-[docs/threat-model.md](docs/threat-model.md#what-this-tool-assumes) does not hold
-for it. If you need separation between people, use a devbox each.
+of spec and
+[the reasoning](docs/threat-model.md#what-this-tool-assumes) does not hold for
+it. If you need separation between people, use a devbox each.
 
-[![Developed in dejima](assets/dejima-badge.svg)](https://gitbox.branderson.io/dejima/dejima)
-
-## What a devbox is, and why it is a different problem
-
-A devbox is a long-lived VM that runs [dejima](https://gitbox.branderson.io/dejima/dejima)
-sessions. It differs from a CI runner in one way that drives everything else:
-**it holds uncommitted work, so it cannot be rolled back on a schedule.**
-
-That matters because rollback is the entire containment story of its sister
-project, [dejima-ci-hardener](https://gitbox.branderson.io/dejima/dejima-ci-hardener).
-A runner is built to be lost. Anything that gets into one has until the next
-nightly rebuild, and nothing on it was worth keeping anyway. Take that away and
-what is left has to come from somewhere else: the hypervisor boundary, and
-knowing precisely what sits inside it.
-
-## What it does not claim
-
-It does not prevent root on the devbox. Nothing here tries to.
-
-What it does is make root on the devbox reach less, and make that reach
-something you can check rather than assume. The honest version of what each
-layer grants is [docs/threat-model.md](docs/threat-model.md), including the
-[blast radius by layer](docs/threat-model.md#blast-radius-by-layer) and the
-options that were [rejected, with reasons](docs/threat-model.md#rejected-with-reasons).
-
-The shortest way to find out whether this is the tool you want is
-[Not bounded](docs/threat-model.md#not-bounded), which is the same page's
-negative space collected in one list rather than left to be inferred from what
-each section happens to discuss.
-
-Container escape is deliberately deprioritised. An escape gains root, which is
-more than the container has, and root on this VM is already a row in that table,
-bounded by the same hypervisor firewall however it was reached. So
+**Container escape is deliberately deprioritised.** An escape gains root, which
+is more than the container has — and root on this VM is already a row in the
+[blast radius table](docs/threat-model.md#blast-radius-by-layer), bounded by the
+same hypervisor firewall however it was reached. So
 [patching is what is left worth doing](docs/threat-model.md#why-container-escape-is-deprioritised),
 and separating escape from root inside the guest is not.
-
-## Two halves
-
-| | |
-| --- | --- |
-| [proxmox/README.md](proxmox/README.md) | The node side: create the VM, apply the firewall. **The primary control.** Everything is done in the web console. |
-| [docs/building-a-devbox.md](docs/building-a-devbox.md) | The guest side: install, bootstrap, verify. The same on any hypervisor. |
-
-Do the node side first, through the end of its §3.
-
-The split is deliberate. Nothing guest-side knows it is on Proxmox, so another
-hypervisor can be added later without touching a single step on the other page.
 
 ## Use
 
@@ -159,17 +142,16 @@ forge, so there is nothing to type and nothing to leak.
 
 ## Versions, and the boxes already out there
 
-This is at **v2**. `VERSION` says so, and `/etc/dejima-devbox/state` says what a
-given devbox is at — two numbers, because the guest half is installed from a
+`VERSION` is what this checkout ships; `/etc/dejima-devbox/state` is what a
+given devbox is at. **Two numbers**, because the guest half is installed from a
 checkout and the node half is typed into a console, and only one of them is
 knowable from inside the VM.
 
-dejima needs none of this: its containers are short-lived, only the tip of
-`main` is supported, and `git pull` closes any gap. A devbox is pinned to the
-day it was built, and a snapshot restore can move it backwards without anyone
-deciding to. [docs/upgrading.md](docs/upgrading.md) is the process;
-[upgrades/](upgrades/) is one note per version, written for someone standing at
-a console who has not read the diff.
+dejima needs none of this — short-lived containers, tip of `main` only, `git
+pull` closes any gap. A devbox is pinned to the day it was built, and a snapshot
+restore can move it backwards without anyone deciding to.
+[docs/upgrading.md](docs/upgrading.md) is the process; [upgrades/](upgrades/) is
+one note per version, written for someone at a console who has not read the diff.
 
 ```sh
 ./bin/dejima-devbox-upgrade status    # run from a checkout, not the installed copy

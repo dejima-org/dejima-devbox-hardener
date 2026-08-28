@@ -17,18 +17,14 @@ correct, alarming, and not about anything you did wrong.
 
 ## Why
 
-The node firewall's outbound DROPs named IPv4 ranges only, so the control this
-project exists to provide did not apply to IPv6 at all. Every Linux host brings
-up an `fe80::` address on every interface whether or not anything routes v6, and
-a daemon bound to `::` answers on it — so the machine beside your devbox was
-reachable across the segment with all four DROPs in force, on a network with no
-IPv6 in it. `dejima-devbox-audit reach` reported `PASS` throughout, because its
-probe was `ip -4 route show default`.
+Until you do this, **your devbox reaches its neighbours over IPv6** — on a
+network with no IPv6 in it, because every Linux host answers on `fe80::`
+regardless. All four v4 DROPs are in force and irrelevant, and
+`dejima-devbox-audit reach` reports `PASS`, because it probes
+`ip -4 route show default`.
 
-The full argument is in
+Why the family is dropped whole rather than enumerated:
 [the threat model](../docs/threat-model.md#the-lan-boundary-is-two-boundaries).
-The short version: IPv6 has no RFC 1918, so the family is dropped whole rather
-than enumerated.
 
 ## 1. Node — two rules in the Proxmox console
 

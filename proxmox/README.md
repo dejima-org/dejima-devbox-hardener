@@ -1,85 +1,58 @@
 # Provisioning a devbox on Proxmox
 
-The node-side half: the VM itself and the firewall applied to it. Everything
-here is done in the Proxmox web console.
+The node-side half: the VM, and the firewall applied to it. All of it in the web
+console. The in-VM half is
+[docs/building-a-devbox.md](../docs/building-a-devbox.md), the same on any
+hypervisor.
 
-What happens *inside* the VM is
-[docs/building-a-devbox.md](../docs/building-a-devbox.md), which is the same on
-any hypervisor. Do this page first, then go there.
+## The whole job
 
-That split is deliberate, and so is the console-only rule. A script that runs
-`qm create` and writes into `/etc/pve/firewall/` is exactly the kind of
-artifact people paste into a root shell without reading, and the blast radius
-is the whole node, including every VM on it that has nothing to do with this
-one. The steps below are short enough to follow and specific enough to check.
+Five steps, and the two pages interleave — follow this order rather than either
+page top to bottom.
 
-Nothing on this page asks you to edit a file on the node. Where a console path
-and a file path both exist, this runbook takes the console path even when the
-file would be tidier, because a hand-edited file cannot be checked as you
-follow it and puts the hypervisor's configuration outside the tool's reach.
+| | Do this | Where | Roughly |
+| --- | --- | --- | --- |
+| 1 | Turn the datacenter firewall on | §1 below | one setting |
+| 2 | Create the VM | §2 below | one form |
+| 3 | Install Debian | [guest §1](../docs/building-a-devbox.md#1-install-debian) | the usual |
+| 4 | **Build the rules, apply them, verify** | §3 below | **the substance of this page** |
+| 5 | Finish the guest setup | [guest §2 onward](../docs/building-a-devbox.md#2-addressing-leave-it-on-dhcp-for-now) | one command, then checks |
 
-The in-VM half **is** a script:
-[`bin/dejima-devbox-bootstrap`](../bin/dejima-devbox-bootstrap).
+Then §4 here, whenever you want a snapshot.
 
----
+**Everything except step 4 is short.** Step 4 is twelve firewall rules entered
+into a form, three policy settings, and two verification passes. If you have
+done it before, [the rule table](#build-the-group-once) is the whole of it.
+
+**The rules go on after the OS is installed, not before.** The Debian installer
+takes its address by DHCP whatever you intend to pin it to afterwards, and a
+lease needs a reply back in. Apply the group first, without the DHCP pair from
+§3, and the installer simply has no network — which presents as a broken mirror
+or a dead link, not as a firewall you switched on ten minutes earlier. Ticking
+the Firewall checkbox in §2 is safe on its own.
 
 ## What you are building
 
-A machine you cannot afford to lose, treated as one you might.
+**A machine you cannot afford to lose, treated as one you might.**
 
-That sentence is the whole difference from a CI runner. A runner is built to be
-lost: it is rebuilt from a snapshot on a schedule, so anything that gets into it
-has until the next rollback and no longer. A devbox holds uncommitted work, so a
-rollback on a timer destroys the thing the machine exists to hold. Nothing
+That is the whole difference from a CI runner, which is built to be lost and
+rebuilt from a snapshot on a schedule. A devbox holds uncommitted work, so a
+rollback on a timer destroys the thing the machine exists to hold, and nothing
 reclaims this VM on a cadence.
 
-What follows from that: containment here is the firewall on this page, plus
-keeping the box worth little, plus being able to rebuild it. There is no fourth
-thing, and no scheduled undo.
+What follows: containment here is the firewall on this page, plus keeping the
+box worth little, plus being able to rebuild it. There is no fourth thing.
 
 **The firewall goes on the node, not in the guest.** Root in the VM can flush
 any rule set it can see. It cannot reach one applied to its own tap device.
+dejima's own controls are not a second copy of this — they bound what a
+*session* reaches, and cannot bound what the *VM* reaches, because they run
+inside it.
 
-**dejima's own controls are not a second copy of this.** They bound what a
-session inside the container reaches, and they do that well: the container's
-egress is deny-by-default and it is given the Docker host's address rather than
-the host's subnet, so a session cannot walk your LAN. What they cannot bound is
-what the *VM* reaches, because they run inside it. That gap is what this page
-closes, and it is why this is worth doing even though dejima already firewalls
-itself.
-
-**What this does not prevent.** Root on this VM. Nothing here tries to. What it
-does is make root on this VM worth less: no LAN to move onto, and a machine
-whose rebuild cost you have already paid once. See
-[docs/threat-model.md](../docs/threat-model.md#blast-radius-by-layer) for what
+**It does not prevent root on this VM.** It makes root here worth less: no LAN
+to move onto, and a machine whose rebuild cost you have already paid once.
+[docs/threat-model.md](../docs/threat-model.md#blast-radius-by-layer) has what
 each layer actually grants.
-
----
-
-## What order to do this in
-
-This page and the guest runbook interleave. Doing them strictly in sequence
-does not work, and the reason is worth knowing before you hit it.
-
-1. **§1 and §2 here.** Datacenter firewall on, VM created.
-2. **[Install the OS](../docs/building-a-devbox.md#1-install-debian)**, then
-   come back. That is the guest runbook's §1 and it is the only part of it you
-   need before returning.
-3. **§3 here.** Build the rules and apply them. Both halves of its verification
-   work at this point, including the ones run from inside the VM.
-4. **[The rest of the guest runbook](../docs/building-a-devbox.md#2-addressing-leave-it-on-dhcp-for-now)**,
-   from its §2 onward.
-5. **§4 here** whenever you want a snapshot.
-
-**The rules go on after the OS is installed, not before**, and that ordering is
-load-bearing rather than a matter of taste. The Debian installer takes its
-address by DHCP whatever you intend to pin it to afterwards, and a lease needs
-a reply back in. Apply the group first without the DHCP pair from §3 and the
-installer simply has no network, which presents as a broken mirror or a dead
-link and not as a firewall you switched on ten minutes earlier.
-
-Ticking the Firewall checkbox in §2 is safe on its own. It is the group and the
-policies in §3 that start dropping things.
 
 ---
 
@@ -143,36 +116,28 @@ later visit. That is reason enough to pin it.
 
 ## Now install the OS, then come back
 
-The VM exists and has no operating system. Go to
 **[docs/building-a-devbox.md §1](../docs/building-a-devbox.md#1-install-debian)**,
-install Debian, and return here for §3.
+then return here for §3. Nothing else from that page is needed yet.
 
-Nothing else from the guest runbook is needed yet. Coming back with a booted VM
-is what makes the rest of this page checkable rather than assumed: §3 ends by
-testing the rules from inside, and there is nothing to test from until an OS is
-running.
+§3 ends by testing the rules from inside the VM, and there is nothing to test
+from until an OS is running. That is the whole reason for the detour.
 
 ---
 
 ## 3. The firewall rules
 
+**This is the primary control.** Everything else in this repository exists to
+verify it or explain it.
+
 Twelve rules, built once as a **security group** and applied to each devbox.
-Even with one VM, build the group: hand-entered copies are two chances to get
-the ordering wrong and one of them to drift later.
+Build the group even with one VM: hand-entered copies are two chances to get the
+ordering wrong, and one of them to drift later.
 
-This is the primary control. Everything else in this repository exists to
-verify it or to explain it.
-
-### What each part is for
-
-The outbound half is short and does the work. Six DROPs cover every address a
-neighbour of this VM can hold, and above them sit exceptions for the two hosts
-it genuinely needs: your forge and your resolver. That is the bound this whole
-project states, and it does not change however long the inbound list gets.
-
-The inbound half is the part that grows, because unlike a CI runner a devbox
-offers services you want to reach. Keep it legible rather than short: every
-subnet named here, every port stated, and no rule added anywhere else.
+The outbound half does the work and stays fixed — six DROPs covering every
+address a neighbour can hold, with exceptions above them for the two hosts this
+VM genuinely needs. The inbound half is the part that grows, because unlike a CI
+runner a devbox offers services you want to reach; keep it legible rather than
+short.
 
 ### Build the group once
 
@@ -216,60 +181,34 @@ the firewall.
 
 #### Rule 12, and why IPv6 is dropped whole
 
-Rules 7 to 11 work because the protected set is enumerable. RFC 1918 named three
-ranges, your LAN is inside them, and the list is short enough to read.
+**IPv6 has no RFC 1918**, so there is no list of private ranges to mirror — the
+family goes whole instead. Worth having even on a network that routes no IPv6,
+because every Linux host answers on `fe80::` regardless. The argument is in
+[the threat model](../docs/threat-model.md#the-lan-boundary-is-two-boundaries)
+and again above `OUT DROP -dest ::/0` in
+[firewall.fw.template](firewall.fw.template).
 
-**IPv6 has no RFC 1918.** A v6 network is numbered out of a globally routable
-prefix delegated by your ISP, so there is no equivalent list to write down.
-Dropping `fc00::/7` catches unique-local addresses most networks do not use and
-misses the prefix your actual neighbour is on. Since the set cannot be
-enumerated, the family goes.
+**Do it here, not with `disable_ipv6` in the guest** — that is a setting root in
+the guest can put back.
 
-This costs a devbox nothing. The internet is still reached over IPv4 by the
-default policy, unbounded and on purpose. Rule 12 removes a second path to the
-same place, not the only path.
-
-It is worth having even if you are certain your network has no IPv6. Every Linux
-host brings up an `fe80::` address on every interface whether or not anything
-routes v6, and a daemon bound to `::` answers on it. Without rule 12, rules 7 to
-11 can all be in force and the machine beside this one is still one
-`ssh fe80::...%eth0` away. That path does not show up in `ip -4 route`, does not
-involve your router, and is invisible to anyone checking the v4 rules are right.
-
-**Do not do this in the guest instead.** `net.ipv6.conf.all.disable_ipv6=1` looks
-equivalent and is not: it is a setting on a machine this whole file assumes an
-attacker holds root on, and root can set it back. The rule belongs on the node
-for the same reason every other rule here does.
-
-If the console rejects `::/0`, the same coverage is four rules — `fe80::/10`,
-`fc00::/7`, `ff00::/8`, `2000::/3` — placed together in rule 12's position.
-Prefer the single line: four entries are four chances to enter three.
+**If the console rejects `::/0`**, enter four rules in rule 12's position
+instead: `fe80::/10`, `fc00::/7`, `ff00::/8`, `2000::/3`. Prefer the single
+line; four entries are four chances to enter three.
 
 `dejima-devbox-audit reach` checks this one by behaviour, like the rest.
 
 #### Why the front door gets the narrower list
 
-The intuition that SSH is the more dangerous of the two is backwards.
+The intuition that SSH is the more dangerous of the two is backwards: same
+capability, weaker gate. Basic auth is a password with no rate limiting, no
+lockout and no second factor; an SSH key has nothing to guess. So the front door
+takes the smaller source range. Argued in full above the inbound rules in
+[firewall.fw.template](firewall.fw.template).
 
-Both put a terminal in front of whoever reaches them, so they do not differ in
-capability. They differ in what stands in front. SSH with public-key auth has
-nothing to guess and nothing to stuff, and is about as attack-resistant as an
-exposed service gets. A web front door behind HTTP basic auth is a password,
-and nginx's basic auth brings no rate limiting, no lockout and no second factor
-unless they are added deliberately.
-
-Same capability behind a weaker gate, so the front door is the higher-risk
-service and takes the smaller source range. Usage tends to land on that split
-anyway: you administer over SSH from whatever device is to hand, and you want
-the front door for a phone, because that is what it is for.
-
-Two cheap improvements to the front door, since it is the weaker side by
-construction:
-
-- `limit_req` on that nginx location, which supplies the rate limiting basic
-  auth does not have;
-- a client certificate, which phones install as a profile and which brings that
-  gate to roughly the strength of an SSH key.
+Two cheap improvements, since it is the weaker side by construction:
+`limit_req` on that nginx location, and a client certificate — which phones
+install as a profile and which brings the gate to roughly the strength of an
+SSH key.
 
 #### What this list does not bound
 
@@ -290,6 +229,76 @@ VM and the rules are on the node, so it can no more read your inbound list than
 it can read the DROPs. It verifies outbound containment by behaviour, which is
 possible from inside. Inbound exposure can only be checked from outside, by
 trying to connect, and this tool does not go looking for things to connect to.
+
+#### Reaching a service behind a reverse proxy
+
+Skip this if the forge and the resolver are everything this VM needs on your
+network. Otherwise it is the section that decides whether your pinhole list
+means what it says.
+
+**One port per service, and one rule per port.** That is the whole pattern.
+
+**Why it has to be that way.** A rule here matches an address and a port, and
+nothing else. Proxmox cannot filter by hostname; a reverse proxy routes *by*
+hostname. So a rule naming a shared proxy on a shared port reaches **every
+service behind that port**, not the one you had in mind — a compromised devbox
+picks its own `Host` header and nothing on the node can tell the difference.
+
+That is not a small discrepancy. It means a rule reading "the devbox may reach
+ntfy" actually says "the devbox may reach whatever is on that port today", and
+the second sentence changes without anyone touching the firewall.
+
+**Give each service its own listen port and the discrepancy closes.** The port
+is enforced here, on the node, by something the guest cannot reach, so each rule
+grants exactly one service and this list reads as what it claims to be.
+
+| # | Direction | Action | Protocol | Dest. port | Source / Dest | Why |
+| --- | --- | --- | --- | --- | --- | --- |
+| 6b | out | ACCEPT | tcp | ntfy's own port | **Dest:** the proxy | dejima's session notifications |
+| 6c | out | ACCEPT | tcp | *its own port* | **Dest:** the proxy | *the next one, if any* |
+
+Same address each time where they share a proxy, a different port each time, and
+**never a second service on a port already listed** — that widens a rule without
+adding one, which is the failure this section exists to prevent.
+
+Place them with the other pinholes, above the DROPs.
+
+##### Two things to keep true on the proxy
+
+Both are in dejima's
+[`docs/nginx-dejima.conf.example`](https://gitbox.branderson.io/dejima/dejima/src/branch/main/docs/nginx-dejima.conf.example),
+and neither is this repository's to enforce — but a rule above is only worth
+what they are:
+
+- **A reject `default_server` on each listen.** nginx picks a block by SNI/Host
+  and falls back to the default for that address and port. Without one,
+  `server_name` isolates nothing and every name resolving there reaches the
+  first block — which puts you back to a port that serves more than you meant.
+- **`$http_host`, not `$host`, on any port other than 443.** `$host` strips the
+  port, so a service comparing `Origin` against `Host` sees `name` where the
+  client sent `name:8443` and refuses every request. dejima's example calls this
+  out for `ttyd` specifically.
+
+##### ntfy, as the worked example
+
+`dejima-notify-watch` is a systemd *user* unit on this VM, so its push crosses
+your LAN. Without rule 6b, dejima's remote access is configured, enabled, and
+**silently sends nothing** — no error anywhere you are looking, and a phone that
+never buzzes.
+
+- **Check whether you need it.** A `ntfy_url` resolving to a *public* address is
+  already covered by unbounded internet egress. Only a private one needs a rule.
+- **Read the address and port off your own deployment.** Do not assume 443.
+- **Scope the credential** to the topic dejima publishes to. A token that can
+  write more widely lets a compromised devbox send messages that appear to come
+  from your own infrastructure; one that can *read* a topic carrying alerts
+  about the devbox learns what any monitoring noticed, which is worse.
+
+##### What this costs
+
+Every host named joins this VM's blast radius. One host and one port per rule —
+never a subnet or a range. It widens lateral reach and not the ability to phone
+home, since internet egress is already unbounded by design.
 
 #### Two more, if the VM gets its address by DHCP
 
@@ -341,58 +350,38 @@ of it, so each VM still needs its own:
 | Input Policy | `DROP` |
 | Output Policy | `ACCEPT` |
 
-Inbound denies by default — this VM offers no service anyone should reach, so
-the exceptions are short and knowable. Outbound accepts by default, and the LAN
-is denied explicitly by the group.
-
-That asymmetry is deliberate, and it is worth resisting the obvious-looking
-alternative: deny outbound too, then allow tcp/80, tcp/443 and udp/123. That
-breaks things — apt during a first install, and anything else needing a port
-nobody listed — and each breakage presents as a network fault rather than as a
-firewall rule. It also buys almost nothing: this VM is assumed to be owned by
-an attacker with root, and the guarantee being made is *reaches the internet,
-not your network*, not *reaches only three ports*. Anyone who owns the box
-tunnels over 443 like everybody else.
-
-Deny-by-default earns its keep where the protected set is enumerable, which is
-the LAN. The internet is not, and treating it as though it were gets you a rule
-set that looks strict and only gets in the way.
+Inbound denies by default; outbound accepts by default and the LAN is denied
+explicitly by the group. That asymmetry is deliberate: deny-by-default earns its
+keep where the protected set is enumerable, which the LAN is and the internet is
+not. The argument against inverting it is above `policy_out` in
+[firewall.fw.template](firewall.fw.template).
 
 Then **VM → Firewall → Add → Security Group**, and select
-`dejima-devbox-hardener`. That single entry is the whole rule set, in the order the
-group defines, and it is the only firewall rule the VM needs.
+`dejima-devbox-hardener`. That one entry is the whole rule set. Adding another
+devbox later is the same single step, and the order cannot drift between hosts.
 
-Adding another devbox later is that one step. The ordering below was got right
-once, in one place, and cannot drift between hosts.
+#### The ordering trap
 
-**Order matters within the group, and it is the one thing here that is easy to
-get wrong.**
-Rules are evaluated top to bottom and the first match wins. Your forge and
-your resolver are *inside* the ranges rules 7–10 drop, so if either pinhole
-ends up below them it is dead and the VM cannot reach the forge or resolve
-anything.
+**Rules are evaluated top to bottom and the first match wins.** Your pinholes —
+rules 3 to 6, plus 6b if you added it — name addresses *inside* the ranges
+rules 7 to 12 drop. A pinhole below its DROP is dead, and the VM cannot reach
+its forge or resolve anything.
 
-**The console inserts each new rule at the TOP of the list, not the bottom.** So
-entering the rules in the order they are written above leaves you with them in
-reverse: the four DROPs on top, every pinhole beneath them, and a devbox that
+**The console inserts each new rule at the TOP.** So entering them in table
+order leaves you the reverse: DROPs on top, pinholes beneath, and a devbox that
 cannot reach its forge. Following the table without watching the list is enough
-to produce exactly the failure this section is warning about.
+to produce it.
 
-Two ways through it. **Drag each rule to the bottom as you add it**, which keeps
-the list matching the table at every step and is the easier one to check. Or
-enter them in reverse, from the last row up to the first, and let the insertions
-stack into the right order — quicker, and you are reading the table backwards
-while doing it, which is its own way to get one wrong.
+Two ways through. **Drag each rule to the bottom as you add it**, which keeps
+the list matching the table at every step and is the easier to check. Or enter
+them bottom-up and let the insertions stack into order — quicker, and you are
+reading the table backwards while doing it.
 
-Either way, **read the finished list top to bottom and compare it against the
-table** before you trust it. Nothing else catches this: a dead pinhole looks
-exactly like a working firewall until something tries to reach the forge.
+Either way, **read the finished list top to bottom against the table** before
+you trust it. Nothing else catches this: a dead pinhole looks exactly like a
+working firewall until something tries to reach the forge.
 
-Rules 3–6 are the entire remaining LAN exposure, and they are why "no LAN
-access" is not literally true. Both destinations are pinned to one host, on
-the ports named.
-
-Nothing follows rule 10. The public internet is reached by the default policy.
+Nothing follows rule 12. The public internet is reached by the default policy.
 
 ### Values that must agree
 
@@ -408,6 +397,7 @@ memory.
 | Rule 1's source | The subnets you administer from | your own devices |
 | Rule 2's source | The subnets a phone is on | your own devices |
 | The forge's hostname | `forge_host` in `/etc/dejima-devbox/config` | `dejima-devbox-bootstrap` asks and writes it |
+| Rule 6b's destination **and port** | `ntfy_url`, `[remote-access]` in `~/.config/dejima/config` | `getent hosts <its hostname>` on the VM, and the port out of the URL — not assumed to be 443 |
 
 **Rules 5–6 want the nameserver, not the gateway.** They are the same address
 on plenty of networks, which is exactly what makes this worth saying: using
@@ -422,11 +412,24 @@ and a timeout to the gateway means the firewall rather than a broken network.
 Point rules 3–4 at one address and `forge_host` at a name that resolves
 elsewhere and the audit reports INDETERMINATE, which is correct but unhelpful.
 
+**Nothing checks rule 6b**, and that is worth knowing rather than discovering.
+`dejima-devbox-audit` verifies containment — that things which should be
+unreachable are — and a missing pinhole is the opposite shape: something that
+should be reachable and is not. The audit passes either way. The only symptom
+is a phone that stops buzzing, which looks like dejima being broken rather than
+like a firewall rule, so check this one by sending a notification and watching
+for it.
+
 ### Check it, rather than assuming it
 
-On the node, with the VM **running** — Proxmox builds these chains around the
-VM's tap device, so a stopped VM has none and their absence would tell you
-nothing:
+**Two passes.** The first reads configuration, the second tests behaviour, and
+only the second is proof: a rule that is loaded and a rule that does what you
+meant are different claims.
+
+#### Pass one, on the node, with the VM running
+
+Proxmox builds these chains around the tap device, so a stopped VM has none and
+their absence would tell you nothing.
 
 ```sh
 # what is actually loaded right now
@@ -439,19 +442,15 @@ sudo ip6tables -S | grep "tap<vmid>i0"
 sudo pve-firewall compile | grep -B2 -A20 "tap<vmid>i0"
 ```
 
-**Run both, not just the first.** A rule with an IPv6 destination is compiled
-into `ip6tables` and is absent from `iptables -S` — so checking only the v4
-table shows rule 12 missing whether it is there or not, and shows it identically
-either way.
+**Both tables, not just the first.** An IPv6 rule compiles into `ip6tables` and
+is absent from `iptables -S`, which shows rule 12 missing whether it is there or
+not.
 
-**What you are looking for.** Proxmox names the per-VM chains after the tap
-interface — `tap<vmid>i0-IN` and `tap<vmid>i0-OUT` for the first NIC — and
-your rules appear inside them, in the order you added them. In the v4 `-OUT`
-chain that means the four pinhole ACCEPTs first, then the five LAN DROPs, then
-whatever Proxmox appends for the policy. The v6 `-OUT` chain holds rule 12 and
-none of the pinholes, because every one of them names an IPv4 address.
-
-**What each failure looks like.**
+**What you are looking for.** Chains named `tap<vmid>i0-IN` and `-OUT`, holding
+your rules in the order you added them. The v4 `-OUT` chain has the four pinhole
+ACCEPTs, then the five LAN DROPs, then whatever Proxmox appends for the policy.
+The v6 `-OUT` chain has rule 12 and no pinholes, since every pinhole names an
+IPv4 address.
 
 | What you see | What it means |
 | --- | --- |
@@ -461,17 +460,12 @@ none of the pinholes, because every one of them names an IPv4 address.
 | Rules present and correct, DNS still failing | The address in rules 5–6 is not the VM's nameserver. The gateway is the usual wrong answer — see "Values that must agree" |
 | v4 chain right, `ip6tables -S` empty | Rule 12 was not entered, or the console rejected `::/0` and the error was missed. Nothing about the v4 half will look wrong |
 
-`pve-firewall status` is the quicker sanity check of whether the service is
-running and enabled at all, but it says nothing about *these* rules — it is
-the datacenter switch it reports on, not your twelve lines.
+`pve-firewall status` reports the datacenter switch, not these rules.
 
-**Both commands describe configuration.** They are worth reading, and they are
-not proof: a rule that is loaded and a rule that does what you meant are
-different claims. The checks from inside the VM below are the ones that test
-behaviour, which is why they follow rather than replace this.
+#### Pass two, from inside the VM
 
-and from inside the VM, once it is up. Three of these must succeed and two
-must fail, which is what makes the set diagnostic rather than reassuring:
+Three must succeed and two must fail. That is what makes the set diagnostic
+rather than reassuring.
 
 ```sh
 try() { timeout 5 bash -c "exec 3<>/dev/tcp/$1/$2" 2>/dev/null \
@@ -489,29 +483,19 @@ getent hosts deb.debian.org && echo "  resolved" || echo "  DNS FAILED"
 sudo ping -6 -n -c 2 -W 1 -I "$dev" ff02::1
 ```
 
-Nothing here needs installing: `bash` opens a TCP connection on its own and
-`getent` is part of libc, which matters on a machine you have not finished
-setting up yet. `ping` is `iputils-ping`, which Debian has by default.
+Nothing needs installing: `bash` opens TCP connections itself, `getent` is part
+of libc, and `ping` ships with Debian — which matters on a machine you have not
+finished setting up yet.
 
-**The last one asks the whole LAN who is there, over IPv6.** `ff02::1` is the
-all-nodes link-local multicast address and every IPv6 host answers it — and
-every Linux host is an IPv6 host, because the `fe80::` address exists whether or
-not the network routes v6. Replies from an address that is not this VM's own
-mean rule 12 is not in force and the segment is reachable over a family none of
-the v4 checks above touch.
+**The last one asks the whole LAN who is there, over IPv6.** Any reply from an
+address that is not this VM's own means rule 12 is not in force, and that the
+segment is reachable over a family none of the checks above it touch.
 
-Like the gateway probe, it writes down no target: `ff02::1` is the same address
-on every network there has ever been, so naming it describes nothing about
-yours.
-
-**The first probe targets your gateway, deliberately, and not some other host
-on your LAN.** Naming another host would mean writing down something worth
-attacking on the machine this page assumes will be owned. The gateway avoids
-that entirely: its address is already in the routing table, so it reveals
-nothing; it is guaranteed to be alive, which an arbitrary address is not; and
-it sits inside the ranges rules 7 to 10 drop, so with the rules applied it must
-be unreachable *as a destination* while traffic *through* it to the internet is
-untouched.
+**Both targets are chosen so that naming them writes nothing down.** The
+gateway is already in the routing table and `ff02::1` is the same on every
+network there has ever been, so neither describes your topology to anyone
+reading this box. [docs/reference.md](../docs/reference.md#the-three-verdicts)
+has why each is the right probe.
 
 Read them together, because the pattern says which thing is wrong:
 
@@ -603,3 +587,19 @@ Each is reasonable on its own and the set is nobody's decision. Every LAN
 exception belongs in §3's table and nowhere else, so the list can be read in
 one place and pruned in one place. A rule added directly to the VM rather than
 to the group is the one that gets forgotten.
+
+
+## Why there is no script for this page
+
+A script that runs `qm create` and writes into `/etc/pve/firewall/` is exactly
+the kind of artifact people paste into a root shell without reading, and the
+blast radius is the whole node — including every VM on it that has nothing to do
+with this one. So nothing here asks you to edit a file on the node: where a
+console path and a file path both exist, this runbook takes the console path
+even when the file would be tidier, because a hand-edited file cannot be checked
+as you follow it and puts the hypervisor's configuration outside the tool's
+reach.
+
+The in-VM half **is** a script:
+[`bin/dejima-devbox-bootstrap`](../bin/dejima-devbox-bootstrap). The difference
+is what it can reach if it is wrong.

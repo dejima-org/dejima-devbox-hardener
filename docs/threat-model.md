@@ -236,9 +236,10 @@ there is one.
 - **The model API credential.** On this box, and it cannot be moved off,
   because the proxy that holds it has to read it here. An escape converts "can
   use the API while this session lasts" into "holds the token".
-- **The two LAN exceptions.** The forge and the resolver are reachable from
-  this VM on the ports listed, by anything on it. "No LAN access" is not
-  literally true and never was.
+- **The LAN exceptions.** The forge and the resolver are reachable from this VM
+  on the ports listed, by anything on it — and the ntfy server too, if you use
+  dejima's remote access, which needs a third pinhole for a push that leaves
+  the guest. "No LAN access" is not literally true and never was.
 - **Inbound exposure.** The node's inbound list is yours to keep short and
   nothing here checks it. It can only be checked from outside the VM, and this
   tool does not go looking for things to connect to.
