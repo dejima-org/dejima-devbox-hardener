@@ -118,10 +118,15 @@ setup() {
     [[ "$output" == *FAIL* ]]
 }
 
-@test "reach exits non-zero on INDETERMINATE, which must not read as a pass" {
+@test "reach exits 2 on INDETERMINATE, which must not read as a pass" {
+    # 2 specifically, not merely non-zero. dejima-devbox-upgrade reads a
+    # verify-node command's status as 0 in force / 2 could not determine /
+    # anything else NOT in force, so returning 1 here would have it record
+    # "your console work is missing" on the strength of a check that could not
+    # see. Same verdict, different meaning, and only one of them is true.
     gateway_verdict() { printf 'INDETERMINATE\n'; }
     run cmd_reach
-    [ "$status" -ne 0 ]
+    [ "$status" -eq 2 ]
     [[ "$output" == *INDETERMINATE* ]]
 }
 

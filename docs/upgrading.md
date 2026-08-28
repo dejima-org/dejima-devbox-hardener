@@ -69,6 +69,16 @@ Two consequences worth stating plainly:
 - `mark-node` **runs the check first and refuses to record a claim the machine
   contradicts.** `--force` overrides it and records the result as unverified, so
   `status` keeps saying so rather than forgetting.
+- **A check that cannot tell is not a check that failed.** The contract is exit
+  `0` for in force, `2` for could-not-determine, anything else for not in force.
+  `reach` and `drift` both exit `2` on `INDETERMINATE`, and `mark-node` records
+  the assertion as unverified rather than refusing it — telling an operator
+  their console work is missing on the strength of a check that could not see
+  would be wrong in the alarming direction.
+- **The command is looked up on `$PATH` first, then beside the tool.** The
+  fallback is what makes a checkout work on a box where nothing is installed
+  yet. The sister project shipped without it and the tool could not find
+  itself.
 - `status` re-runs the checks for everything you have already recorded. An
   assertion that was true in June and is not true now is a rule somebody removed,
   and that is worth finding out from a tool rather than from an incident.

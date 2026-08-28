@@ -46,7 +46,9 @@ stub_state() {
     # changed, and only one of those is safe to report.
     stub_state "FILE aaa /etc/one"
     run cmd_drift
-    [ "$status" -ne 0 ]
+    # 2, not merely non-zero: the upgrade tool reads this as "could not
+    # determine" rather than "not in force".
+    [ "$status" -eq 2 ]
     [[ "$output" == *INDETERMINATE* ]]
     [[ "$output" == *"no baseline"* ]]
 }

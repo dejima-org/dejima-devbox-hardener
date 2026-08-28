@@ -358,7 +358,12 @@ cmd_reach() {
             say "INDETERMINATE: nothing answered, including the forge."
             say "  A working firewall and a broken network look the same from here."
             say "  Fix connectivity and run again. This is not a pass."
-            rc=1
+            # 2, not 1, and the difference is a contract rather than a detail.
+            # dejima-devbox-upgrade reads a verify-node command's exit status as
+            # 0 in force / 2 could not determine / anything else NOT in force.
+            # Returning 1 here would have it record "your console work is
+            # missing" on the strength of a check that could not see.
+            rc=2
             ;;
     esac
 
@@ -390,8 +395,8 @@ cmd_reach() {
             say "  installs it; a host set up before it did will not have it."
             if [ "$verdict" = PASS ]; then
                 verdict=INDETERMINATE
+                rc=2
             fi
-            rc=1
             ;;
     esac
 
@@ -699,7 +704,7 @@ cmd_drift() {
         sed 's/^/    /' "$DRIFT_ERRS" | head -3 >&2
         printf 'INDETERMINATE\n'
         rm -rf "$work"
-        return 1
+        return 2
     fi
 
     if [ "$accept" = 1 ]; then
@@ -733,7 +738,7 @@ cmd_drift() {
         say "    $PROG drift --accept"
         printf 'INDETERMINATE\n'
         rm -rf "$work"
-        return 1
+        return 2
     fi
 
     [ -n "$missing" ] && {
