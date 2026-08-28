@@ -4,41 +4,28 @@
 #
 # Every ```sh block in the documentation parses as shell.
 #
-# The runbooks are the product here, and a command in one of them is not an
-# illustration - it is something an operator pastes into a root shell on a
-# hypervisor while following the page. A block that does not parse is a defect
-# in the deliverable, exactly as a dangling link is.
+# The runbooks are the product, and a command in one is not an illustration -
+# it is something an operator pastes into a root shell on a hypervisor while
+# following the page. A block that does not parse is a defect in the
+# deliverable, exactly as a dangling link is.
 #
-# This exists because of a specific near-miss. Restructuring prose around a
-# fenced block turned a `\` line continuation into `\\`, which is an escaped
-# backslash rather than a continuation. The rendered page looked right, the diff
-# looked like prose, and the helper function on the other side of it would have
-# failed for anyone who pasted it - with an error naming the line after the one
-# that was wrong.
+# It exists because of a near-miss: restructuring prose around a fenced block
+# turned a `\` line continuation into `\\`, which renders identically, reads
+# as prose in a diff, and breaks for whoever pastes it. Nothing else here looks
+# inside a fence, and nobody counts backslashes at end of line.
 #
-# Nothing else here would have caught it. links.bats reads markdown structure,
-# addresses.bats reads for leaked literals, and neither looks inside a code
-# fence. Review does not catch it either: a backslash at the end of a line is
-# not something a reader counts.
+# IT PARSES AND DOES NOT EXECUTE, which is the only safe thing to do with a
+# file full of `sudo iptables`. So it checks syntax, not whether a command is
+# correct or does what the prose around it claims.
 #
-# WHAT THIS DOES NOT CHECK is whether a command is correct, whether its flags
-# exist, or whether it does what the surrounding prose claims. `bash -n` parses
-# and does not execute - which is the only safe thing to do with a file full of
-# `sudo iptables` and `rm`, and is why this is a syntax check rather than a
-# test of the documentation's truth.
-#
-# PLACEHOLDERS ARE SUBSTITUTED BEFORE PARSING, and that is not a convenience.
-# `<name>` is this repository's placeholder idiom, not shell, and shell reads it
-# as redirection - so whether a block parses would otherwise depend on how many
-# angle brackets happened to land on a line. `try <forge-ip> 443` parses by
-# accident, as two redirects; `ssh <you>@<vm-ip>` does not, because the trailing
-# `>` has nothing after it. Testing that distinction would be testing nothing
-# anyone cares about, and would push the docs towards whichever placeholder
-# spelling appeased the parser.
-#
-# The pattern requires a letter after the `<`, which keeps `3<>/dev/tcp/...`
-# and `<<EOF` intact - both real shell, and both things a naive substitution
-# would quietly corrupt into a passing test.
+# PLACEHOLDERS ARE SUBSTITUTED FIRST. `<name>` is this repository's idiom, not
+# shell, and shell reads it as redirection - so whether a block parsed would
+# otherwise depend on how many angle brackets landed on a line.
+# `try <forge-ip> 443` parses by accident as two redirects; `ssh <you>@<vm-ip>`
+# does not, because the trailing `>` has nothing after it. The pattern requires
+# a letter after the `<`, which leaves `3<>/dev/tcp/...` and `<<EOF` intact -
+# both real shell, and both things a naive substitution would corrupt into a
+# passing test.
 
 setup() {
     REPO="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"

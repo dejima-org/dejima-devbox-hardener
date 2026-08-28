@@ -151,11 +151,57 @@ stub_audit() {
 @test "a missing verify command is not reported as a failed check" {
     # A check that could not run has not found anything. Calling that a failure
     # trains an operator to ignore the word.
+    #
+    # The tool has to be genuinely alone for this: run from the repository it
+    # finds dejima-devbox-audit beside itself and uses it, which is the whole
+    # point of the fallback and the reason this test cannot just rely on $PATH.
+    lonely="$BATS_TEST_TMPDIR/alone"
+    mkdir -p "$lonely/bin"
+    cp "$TOOL" "$lonely/bin/dejima-devbox-upgrade"
+    ln -s "$REPO/upgrades" "$lonely/upgrades"
     write_state guest_version=2
-    run_tool mark-node 2
+    CONF_DIR="$STATE_DIR" run "$lonely/bin/dejima-devbox-upgrade" mark-node 2
     [ "$status" -eq 0 ]
     [[ "$output" == *"cannot check"* ]]
     grep -q '^node_verified=no$' "$STATE_DIR/state"
+}
+
+@test "the verify command is found beside the tool when it is not on PATH" {
+    # The sister project shipped the inverse of this and it found a real
+    # runner: the notes say to run from a checkout, and a PATH-only lookup
+    # could not find the program doing the looking.
+    write_state guest_version=2
+    stub_audit 0
+    # No stub on PATH this time - the sibling in bin/ must be what answers.
+    PATH="$BATS_TEST_TMPDIR/empty:$PATH" CONF_DIR="$STATE_DIR" run "$TOOL" mark-node 2
+    [[ "$output" != *"is not installed here"* ]]
+}
+
+@test "a check that could not tell is recorded, not refused" {
+    # Exit 2 means "could not determine". Collapsing it into "not in force"
+    # would tell an operator their console work is missing on the strength of
+    # a check that never ran.
+    stub_audit 2
+    write_state guest_version=2
+    run_tool mark-node 2
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"could not tell"* ]]
+    [[ "$output" != *"refusing to record"* ]]
+    grep -q '^node_verified=no$' "$STATE_DIR/state"
+}
+
+@test "an unrecorded upgrade whose check passes is not reported as work to do" {
+    # Restoring a snapshot older than the console work leaves the rules on the
+    # node and takes the record with the guest. Reporting that as work to do
+    # sends an operator to redo something already done.
+    stub_audit 0
+    write_state guest_version=2
+    run_tool status
+    # v2 declares a check and it passes, so it is not work to do.
+    [[ "$output" == *"NOT RECORDED, but its check passes"* ]]
+    # v3 declares no check, so it stays plainly outstanding. Both branches in
+    # one run, which is also why this cannot assert the absence of that phrase.
+    [[ "$output" == *"console work outstanding"* ]]
 }
 
 @test "status contradicts a recorded claim the machine no longer supports" {
@@ -202,7 +248,7 @@ stub_audit() {
 
 @test "every note declares the keys the tool reads" {
     for f in "$REPO"/upgrades/0*.md; do
-        for k in version title layers snapshot; do
+        for k in version title layers snapshot downtime; do
             sed -n '/^---$/,/^---$/p' "$f" | grep -q "^$k: " \
                 || { echo "$f: no '$k' in the header"; false; }
         done
@@ -221,6 +267,27 @@ stub_audit() {
         case " $layers " in *" guest "*) continue ;; esac
         ! grep -qE '^[[:space:]]*(sudo )?dejima-devbox-upgrade ' "$f" \
             || { echo "$f: no guest step installs it, so commands must use ./bin/dejima-devbox-upgrade"; false; }
+    done
+}
+
+@test "an upgrade needing a window says so in status, where it can be planned" {
+    # Downtime on a devbox is a scheduled event: announced, with sessions
+    # drained first. Which upgrades need one is planning information, and an
+    # operator who has to open each note to find out will schedule badly.
+    write_state guest_version=1 node_version=1
+    run_tool status --no-verify
+    [[ "$output" == *"NEEDS A WINDOW"* ]]
+}
+
+@test "a note requiring a snapshot also declares it needs a window" {
+    # A clean snapshot means stopping the VM. A note that asks for one and
+    # calls itself live-safe is wrong about the only part an operator has to
+    # schedule around.
+    for f in "$REPO"/upgrades/0*.md; do
+        head=$(sed -n '/^---$/,/^---$/p' "$f")
+        [ "$(printf '%s' "$head" | sed -n 's/^snapshot: //p')" = required ] || continue
+        [ "$(printf '%s' "$head" | sed -n 's/^downtime: //p')" = window ] \
+            || { echo "$f: requires a snapshot but does not declare a window"; false; }
     done
 }
 

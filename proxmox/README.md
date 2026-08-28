@@ -7,6 +7,11 @@ hypervisor.
 
 ## The whole job
 
+**Already have a devbox?** This page is for building one. To bring an existing
+box forward, start at
+[Updating](../README.md#updating-an-existing-devbox) instead — the upgrade notes
+name the rules to change rather than having you re-read the table below.
+
 Five steps, and the two pages interleave — follow this order rather than either
 page top to bottom.
 
@@ -199,6 +204,23 @@ offers services you want to reach; keep it legible rather than short.
 | 10 | out | DROP | — | — | **Dest:** `169.254.0.0/16` | Link-local, incl. metadata services |
 | 11 | out | DROP | — | — | **Dest:** `100.64.0.0/10` | Carrier-grade NAT, where a tailnet lives |
 | 12 | out | DROP | — | — | **Dest:** `::/0` | IPv6, the whole family |
+
+**Set Log level to `info` on rules 7 to 12, and leave it `nolog` everywhere
+else.** A packet matching a DROP is this VM trying to reach your network, which
+on a working devbox is close to never — its forge and resolver have pinholes
+above, and nothing else it does legitimately goes to a private address. So that
+log is quiet by construction, and a burst in it is the loudest signal a
+compromised devbox produces. It is also written by the hypervisor, about traffic
+the hypervisor refused, which puts it somewhere the guest cannot reach.
+
+Logging the *policies* instead would be useless: `policy_out` is ACCEPT, so it
+would record this machine's entire internet traffic, and `policy_in` drops
+broadcast chatter all day.
+
+Expect noise at first. mDNS, SSDP and NetBIOS all land here on a healthy box.
+The signal is not that a drop happened but that a destination appeared which
+this VM has never tried before, so read a week of it before deciding what
+normal looks like.
 
 **Rules 1 and 2 are added once per client subnet.** Phones and laptops sit on
 different wireless networks often enough that assuming one is the wrong

@@ -2,6 +2,7 @@
 version: 2
 title: The LAN boundary gains IPv6 and the CGNAT range
 layers: node guest
+downtime: window
 snapshot: required
 verify-node: dejima-devbox-audit reach
 ---
@@ -97,8 +98,15 @@ picks up any change to it.
 ### Check the guest half landed
 
 ```sh
-sudo dejima-devbox-audit reach
+sudo /usr/local/sbin/dejima-devbox-audit reach
 ```
+
+The full path because these install to `/usr/local/sbin`, and `sudo` reaches
+that only if your `sudoers` sets a `secure_path` including it — without one,
+`sudo` inherits your own PATH, and Debian leaves every `sbin` off a non-root
+PATH. `sudo printenv PATH` says which you have; bootstrap says so too if it
+noticed. Elsewhere in these docs the bare name is used, and works wherever
+`secure_path` is set.
 
 Two `PASS` lines now, not one. The second is the IPv6 half. If it says `FAIL`,
 the node work above is not in force — go back to §1 and check `ip6tables`, not
@@ -107,7 +115,7 @@ the node work above is not in force — go back to §1 and check `ip6tables`, no
 ## 3. Record the node half
 
 ```sh
-sudo dejima-devbox-upgrade mark-node 2
+sudo /usr/local/sbin/dejima-devbox-upgrade mark-node 2
 ```
 
 This runs `dejima-devbox-audit reach` first and refuses to record the assertion
@@ -115,6 +123,12 @@ if it does not pass, so the thing being written down has been corroborated
 rather than merely claimed.
 
 ## 4. Snapshot
+
+**This is the only step here that needs the VM stopped**, and it is the whole of
+this upgrade's `downtime: window`. Everything above it is live-safe: the console
+rules apply without touching the guest, and the guest steps install only what is
+absent. Batch it with any other work needing the box down rather than taking it
+out mid-procedure.
 
 **Take a fresh snapshot, and delete the pre-upgrade one.**
 

@@ -26,6 +26,16 @@ SHARE_DIR=${SHARE_DIR:-/usr/local/share/dejima-devbox}
 
 docker_group_added=0
 
+# A first build or a re-run, decided before anything here writes state.
+#
+# It changes what the closing report should say, and getting it wrong is how a
+# person mid-upgrade gets sent to section 3 of a runbook they finished months
+# ago. Read from the state file rather than the config, because the config
+# predates versioning and exists on hosts that were never bootstrapped by a
+# version that wrote one.
+rerun=0
+[ -r "$CONF_DIR/state" ] && rerun=1
+
 die() { echo "$PROG: $*" >&2; exit 1; }
 say() { printf '%s\n' "$*" >&2; }
 
@@ -116,9 +126,31 @@ apt-get update -qq
 # absence has no symptom: without it the audit cannot ask the segment who is
 # reachable over IPv6, which is a check it must then report as INDETERMINATE
 # rather than pass. Cheaper to install than to diagnose.
-apt-get install -y -qq --no-install-recommends \
-    docker.io docker-cli \
-    python3 jq git ca-certificates curl iputils-ping
+# ONLY WHAT IS MISSING, and that is a downtime decision rather than a tidiness
+# one.
+#
+# `apt-get install` on an already-installed package is not a no-op: if the
+# repositories offer a newer version it upgrades, and upgrading docker.io
+# restarts the daemon and kills every running container with it. On a devbox
+# that is somebody's session, mid-task, with no warning - and this program is
+# documented as idempotent and safe to re-run, which is exactly when it would
+# happen.
+#
+# Downtime on a devbox is a scheduled event. It is announced, work is drained
+# first, and it does not arrive as a side effect of a step described as
+# changing nothing. So this installs what is absent and touches nothing else;
+# keeping packages current is `apt upgrade`, in a window somebody chose.
+missing=""
+for pkg in docker.io docker-cli python3 jq git ca-certificates curl iputils-ping; do
+    dpkg-query -W -f='${db:Status-Abbrev}' "$pkg" 2>/dev/null | grep -q '^ii' || missing="$missing $pkg"
+done
+if [ -n "$missing" ]; then
+    say "  installing:$missing"
+    # shellcheck disable=SC2086
+    apt-get install -y -qq --no-install-recommends $missing
+else
+    say "  packages   all present, nothing installed or upgraded"
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
     {
@@ -315,6 +347,26 @@ install -m 0755 "$SRC/bin/dejima-devbox-audit" "$BIN_DIR/dejima-devbox-audit"
 
 install -m 0755 "$SRC/bin/dejima-devbox-upgrade" "$BIN_DIR/dejima-devbox-upgrade"
 
+# Reachability, not just existence.
+#
+# Everything installs to /usr/local/sbin and every instruction in this
+# repository reads `sudo dejima-devbox-...`. That works only where sudoers sets
+# a secure_path including sbin; without one, sudo inherits the caller's PATH,
+# and Debian leaves every sbin directory off a non-root PATH. The result is a
+# correct install whose documented commands all report "command not found",
+# which reads as a broken install rather than as a PATH.
+#
+# This runs under sudo, so its own PATH is the one those later commands will
+# get - which makes `command -v` here the real question rather than a proxy.
+if [ "$(command -v dejima-devbox-audit 2>/dev/null)" != "$BIN_DIR/dejima-devbox-audit" ]; then
+    say ""
+    say "NOTE: $BIN_DIR is not on the PATH sudo gives you here, so"
+    say "  'sudo dejima-devbox-audit ...' will not be found. Either use the full"
+    say "  path, as $BIN_DIR/dejima-devbox-audit, or add a secure_path to"
+    say "  sudoers that includes it. Nothing about this install is wrong."
+    say ""
+fi
+
 # The upgrade notes travel with the program, so an operator on a devbox with no
 # checkout can still read what an upgrade asks of them. The installed copy
 # knows only the versions that existed when it ran, and says so rather than
@@ -359,128 +411,152 @@ systemctl enable --now dejima-devbox-audit.timer
 #    nobody opens.
 
 say ""
-say "Running the audit once."
+say "Checking containment."
 say ""
+# `reach` and not `all`. The closing lines below are about the hypervisor
+# rules, and `all` also runs drift - which on a box with no baseline reports
+# INDETERMINATE, makes this exit non-zero, and had the report announce a failed
+# audit and send the operator to the firewall runbook while the firewall was
+# fine. One question per verdict.
 audit_rc=0
-"$BIN_DIR/dejima-devbox-audit" || audit_rc=$?
+"$BIN_DIR/dejima-devbox-audit" reach || audit_rc=$?
 
 # ---------------------------------------------------------------------------
 # 9. Where this leaves the host.
 #
-# Exits 0 either way. What this program installs is in the guest, and it either
-# installed or died earlier; the audit's subject is the hypervisor, which is
-# configured after this runs on the documented order, so a FAIL here is the
-# expected reading rather than an install that went wrong.
+# Three states, scanned in one block, with detail only for whichever of them is
+# not the good answer.
 #
-# What would be wrong is saying the same thing in both cases. This printed a
-# fixed closing paragraph explaining that the audit reports FAIL until the node
-# rules are applied, which on a host where they already were contradicted the
-# PASS three lines above it.
+# This used to be four paragraphs in a fixed order, every one addressed to
+# somebody mid-first-build. An operator halfway through an upgrade was told to
+# go and do section 3 of a runbook they finished months ago, underneath a PASS
+# saying those rules were already on - and the audit it quoted had run `all`,
+# so a drift check with no baseline reported INDETERMINATE and made the whole
+# thing announce a failure that was not one.
+#
+# Exits 0 whatever the audit said. What this installs is in the guest and it
+# either installed or died earlier; the audit's subject is the hypervisor,
+# which on the documented order is configured after this runs.
 
-say ""
-if [ "$audit_rc" -eq 0 ]; then
-    say "Installed, and the hypervisor rules are in force."
-    say "The timer re-checks them hourly."
-else
-    say "Installed. The audit did not pass."
-    say ""
-    say "  If the hypervisor firewall is not applied yet, this is the expected"
-    say "  reading at this point in the runbook. Apply proxmox/README.md"
-    say "  section 3, then run:"
-    say ""
-    say "    $BIN_DIR/dejima-devbox-audit reach"
-    say ""
-    say "  Those rules are applied to this VM's tap device, on the node. Nothing"
-    say "  in the guest can apply them, and this program cannot either."
-fi
+case $audit_rc in
+    0) reach_state="PASS"    ; reach_why="the hypervisor rules are in force" ;;
+    2) reach_state="UNKNOWN" ; reach_why="nothing answered, including things that should" ;;
+    *) reach_state="FAIL"    ; reach_why="something on your network answered" ;;
+esac
 
-# ---------------------------------------------------------------------------
-# 10. The prerequisite this program deliberately does not meet.
-#
-# dejima takes two things from the account that launches it: a harness
-# installed for that account, and that harness signed in. Both are the
-# account's rather than the machine's, and the sign-in writes a credential this
-# program has no business handling, so it says what has to be true instead of
-# arranging it.
-#
 # WHICH harness is dejima's business, not this program's. It supports more than
-# one and that set changes there, so the table below is recognition and not a
+# one and that set changes there, so this table is recognition rather than a
 # statement of what is supported: a harness missing from it is reported as
-# something this cannot see, never as something the operator has failed to do.
-# The alternative - a list here that has to be kept level with dejima's - is the
-# copied contract this repository argues against everywhere else, and it would
-# go stale by telling somebody their working setup is absent.
-#
-# So three outcomes rather than two, on the same reasoning as the audit's:
-# found and signed in, found and not signed in, and nothing recognised, which is
-# not a finding. Whether a credential that IS there still works is not knowable
-# from here either. A file being present is where this stops.
+# something this cannot see, never as something the operator failed to do.
 #
 # Each row is <state directory>:<file that means signed in>:<name to say>,
-# relative to the account's home.
+# relative to the account's home. One row today, and a loop anyway: the next
+# harness is a line rather than a rewrite.
 harness_dir=""
-# One row today, and a loop anyway: the next harness is a line rather than a
-# rewrite, and the shape says that to whoever adds it.
 # shellcheck disable=SC2043
 for row in ".claude:.credentials.json:Claude Code"; do
     d="${row%%:*}"; rest="${row#*:}"
     if [ -d "$target_home/$d" ]; then
-        harness_dir="$d"
-        harness_cred="${rest%%:*}"
-        harness_name="${rest#*:}"
+        harness_dir="$d"; harness_cred="${rest%%:*}"; harness_name="${rest#*:}"
         break
     fi
 done
 
-say ""
 if [ -z "$harness_dir" ]; then
-    say "No harness this program recognises has run as $target_user here."
-    say ""
-    say "  That is not the same as none being set up: which harnesses dejima"
-    say "  supports is dejima's to say, and this only knows the ones it was"
-    say "  written with. If you have one it does not name, nothing is wrong."
-    say ""
-    say "  What has to be true either way, before dejima's first session: the"
-    say "  harness is installed for $target_user, has been run once so its"
-    say "  state directory exists in $target_home to be mounted, and is signed"
-    say "  in - the credential proxy runs out here and reads that account's"
-    say "  copy."
+    harness_state="UNKNOWN"; harness_why="no harness recognised in $target_home"
 elif [ ! -f "$target_home/$harness_dir/$harness_cred" ]; then
-    say "$harness_name has run as $target_user and is not signed in here."
+    harness_state="MISSING"; harness_why="$harness_name is not signed in for $target_user"
+else
+    harness_state="OK"; harness_why="$harness_name is signed in for $target_user"
+fi
+
+if [ -x "$target_home/.local/bin/dejima" ]; then
+    dejima_state="OK"; dejima_why="installed for $target_user"
+else
+    dejima_state="TODO"; dejima_why="cloned to $target_home/dejima, not installed"
+fi
+
+say ""
+say "=============================================================="
+if [ "$rerun" = 1 ]; then
+    say " Bootstrap re-run. The guest side is at v$version."
+else
+    say " Bootstrap complete. The guest side is at v$version."
+fi
+say "=============================================================="
+say ""
+printf '  %-12s %-8s %s\n' containment "$reach_state" "$reach_why" >&2
+printf '  %-12s %-8s %s\n' harness     "$harness_state" "$harness_why" >&2
+printf '  %-12s %-8s %s\n' dejima      "$dejima_state" "$dejima_why" >&2
+say ""
+
+# The one thing to do next, which depends on where the operator actually is.
+#
+# A re-run is almost always an upgrade, and an upgrade note is a procedure the
+# operator is partway through. Sending them to the build runbook there is worse
+# than saying nothing: it is confidently wrong about their position.
+if [ "$rerun" = 1 ]; then
+    say "  NEXT   You are re-running bootstrap, so you are most likely partway"
+    say "         through an upgrade. Go back to the note you were following."
+    say "         What is outstanding, if you have lost your place:"
     say ""
-    say "  There is no $target_home/$harness_dir/$harness_cred. The credential"
-    say "  proxy runs out here, reads that file and hands the container a"
+    say "           cd $SRC && ./bin/dejima-devbox-upgrade status"
+elif [ "$reach_state" != PASS ]; then
+    say "  NEXT   Apply the hypervisor firewall: proxmox/README.md section 3."
+    say "         On the documented order it has not been done yet, so this"
+    say "         reading is expected rather than a fault. Then:"
+    say ""
+    say "           $BIN_DIR/dejima-devbox-audit reach"
+elif [ "$dejima_state" != OK ]; then
+    say "  NEXT   Install dejima, as $target_user rather than as root:"
+    say ""
+    say "           cd $target_home/dejima && ./install.sh"
+else
+    say "  NEXT   Nothing. The timer re-checks containment hourly."
+fi
+
+# --- detail, only for what is not the good answer ---------------------------
+
+if [ "$reach_state" != PASS ]; then
+    say ""
+    say "  containment: the rules are applied to this VM's tap device, on the"
+    say "  node. Nothing in the guest can apply them and this program cannot"
+    say "  either, so this reports what it found rather than fixing it."
+fi
+
+if [ "$harness_state" = UNKNOWN ]; then
+    say ""
+    say "  harness: dejima needs one installed for $target_user, run once so"
+    say "  its state directory exists to be mounted, and signed in - the"
+    say "  credential proxy runs out here and reads that account's copy. This"
+    say "  recognises a set that is dejima's to change, so a harness it does"
+    say "  not name is something it cannot see, not something you have missed."
+elif [ "$harness_state" = MISSING ]; then
+    say ""
+    say "  harness: there is no $target_home/$harness_dir/$harness_cred. The"
+    say "  credential proxy reads that file and hands the container a"
     say "  placeholder, so until it exists a session fails at the backend and"
     say "  the container is what looks broken. A key in that account's"
-    say "  environment is the other way to answer this, and this cannot see"
-    say "  one from root."
-else
-    say "$harness_name is signed in for $target_user, as far as this can tell:"
-    say "$target_home/$harness_dir/$harness_cred is there. Whether that"
-    say "credential still works is between the harness and its backend."
+    say "  environment answers this too, and cannot be seen from root."
 fi
-say ""
-say "  docs/building-a-devbox.md section 5 has both halves, and what each one"
-say "  breaks when it is the missing one."
 
-# The handoff. Everything above this point is the machine; everything below it
-# belongs to dejima, and the boundary is deliberate - see bin/dejima-devbox-clone
-# for why the source is fetched here and installed there.
-say ""
-say "dejima is at $target_home/dejima, not installed:"
-say ""
-say "    cd $target_home/dejima && ./install.sh"
-say ""
-say "  Run it as $target_user, not as root. It writes into that account:"
-say "  the CLIs into ~/.local/bin, the hooks into ~/.claude/hooks, and a"
-say "  starter ~/.config/dejima/config. Put ~/.local/bin on your PATH."
-say ""
-say "  dejima's own README covers what comes after: a forge, a workflow and a"
-say "  push credential. A fresh config pushes nowhere until you choose one."
+if [ "$dejima_state" != OK ]; then
+    say ""
+    say "  dejima: install.sh writes into $target_user's account - the CLIs"
+    say "  into ~/.local/bin, the hooks into ~/.claude/hooks, and a starter"
+    say "  ~/.config/dejima/config. Put ~/.local/bin on PATH. A fresh config"
+    say "  pushes nowhere until you choose a forge."
+fi
+
 if [ "$docker_group_added" = 1 ]; then
     say ""
-    say "  Log out and back in first. $target_user was added to the docker group"
-    say "  just now, and a shell that was already open does not have it - which"
-    say "  reads as docker being broken rather than as a group that has not"
-    say "  taken effect yet."
+    say "  docker: log out and back in before using it. $target_user was added"
+    say "  to the docker group just now, and a shell already open does not have"
+    say "  it - which reads as docker being broken rather than as a group that"
+    say "  has not taken effect."
 fi
+
+say ""
+say "  docs/building-a-devbox.md section 5 has the harness and dejima halves,"
+say "  and what each one breaks when it is the missing one."
+say ""

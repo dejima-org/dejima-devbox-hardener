@@ -44,6 +44,15 @@ PROBE_TIMEOUT=${PROBE_TIMEOUT:-3}
 
 say() { printf '%s\n' "$*" >&2; }
 
+# The one-word verdict, for a caller reading stdout.
+#
+# Suppressed on a terminal. It exists so a script - or the collector - can read
+# a result without parsing prose, and a person running this by hand gets it
+# already, spelled out, on the line above. Printed anyway it lands interleaved
+# with the human output, because that goes to stderr and this does not, and
+# reads as debris.
+verdict() { [ -t 1 ] || printf '%s\n' "$1"; }
+
 default_gateway() {
     local gw
     gw=$(ip -4 route show default 2>/dev/null | awk '{print $3; exit}')
@@ -92,13 +101,13 @@ gateway_verdict() {
     for port in "${PROBE_PORTS[@]}"; do
         result=$(probe_tcp "$gw" "$port")
         case $result in
-            open|answered) printf 'FAIL\n'; return 0 ;;
+            open|answered) verdict FAIL; return 0 ;;
         esac
     done
     if positive_controls_ok; then
-        printf 'PASS\n'
+        verdict PASS
     else
-        printf 'INDETERMINATE\n'
+        verdict INDETERMINATE
     fi
 }
 
@@ -202,17 +211,17 @@ ipv6_verdict() {
     # Checked first because it needs no probe. An address is evidence on its own,
     # so a host with one is FAIL even where nothing could have been asked.
     if [ -n "$addr" ]; then
-        printf 'FAIL\n'
+        verdict FAIL
         return 0
     fi
     if ! replies=$(ipv6_neighbour_replies); then
-        printf 'INDETERMINATE\n'
+        verdict INDETERMINATE
         return 0
     fi
     if [ "${replies:-0}" -gt 0 ]; then
-        printf 'FAIL\n'
+        verdict FAIL
     else
-        printf 'PASS\n'
+        verdict PASS
     fi
 }
 
@@ -251,6 +260,22 @@ devbox_home() {
 }
 
 resolve_ok() { getent hosts "$1" >/dev/null 2>&1; }
+
+# How long this file has existed here, as `123d`.
+#
+# From mtime, which is the wrong question asked of the only thing available.
+# What matters is how long the credential has been valid, and nothing on this
+# box knows that: a token issued a year ago and copied here yesterday reads as
+# a day old. It is a floor, not an age, and the report says so.
+#
+# Still worth having. A key nobody has touched since the box was built is the
+# common case, and there mtime and issue date are the same day.
+file_age() {
+    local mtime now
+    mtime=$(stat -c %Y "$1" 2>/dev/null) || return 0
+    now=$(date +%s)
+    printf '%dd\n' $(( (now - mtime) / 86400 ))
+}
 
 # --- addressing -------------------------------------------------------------
 #
@@ -342,7 +367,12 @@ cmd_reach() {
             say "INDETERMINATE: nothing answered, including the forge."
             say "  A working firewall and a broken network look the same from here."
             say "  Fix connectivity and run again. This is not a pass."
-            rc=1
+            # 2, not 1, and the difference is a contract rather than a detail.
+            # dejima-devbox-upgrade reads a verify-node command's exit status as
+            # 0 in force / 2 could not determine / anything else NOT in force.
+            # Returning 1 here would have it record "your console work is
+            # missing" on the strength of a check that could not see.
+            rc=2
             ;;
     esac
 
@@ -374,12 +404,12 @@ cmd_reach() {
             say "  installs it; a host set up before it did will not have it."
             if [ "$verdict" = PASS ]; then
                 verdict=INDETERMINATE
+                rc=2
             fi
-            rc=1
             ;;
     esac
 
-    printf '%s\n' "$verdict"
+    verdict "$verdict"
     return $rc
 }
 
@@ -466,11 +496,17 @@ cmd_radius() {
         case "$f" in *.pub) continue ;; esac
         [ -f "$f" ] || continue
         found=1
-        say "  $(stat -c '%A %U:%G' "$f" 2>/dev/null)  $f"
+        say "  $(stat -c '%A %U:%G' "$f" 2>/dev/null)  $(file_age "$f")  $f"
     done
     if [ "$found" = 1 ]; then
         say "  Each of these is reusable off this box. Revoke and reissue them if"
         say "  this host is ever suspect."
+        say ""
+        say "  The age is how long a foothold on this box has been worth"
+        say "  something. Nothing here evicts an intruder you have not found;"
+        say "  rotating on a schedule bounds what one is worth without needing"
+        say "  to find them, which is the only bound this VM has that a"
+        say "  compromise cannot remove."
     else
         say "  none found"
     fi
@@ -481,10 +517,14 @@ cmd_radius() {
     say ""
     say "Model API token:"
     if [ -f "$home/.claude/.credentials.json" ]; then
-        say "  $(stat -c '%A %U:%G' "$home/.claude/.credentials.json" 2>/dev/null)  $home/.claude/.credentials.json"
+        say "  $(stat -c '%A %U:%G' "$home/.claude/.credentials.json" 2>/dev/null)  $(file_age "$home/.claude/.credentials.json")  $home/.claude/.credentials.json"
         say "  dejima keeps this out of the container. The proxy holding it runs"
         say "  here, so root here has it, and it cannot be moved off this host."
         say "  Rotate it first if this host is ever suspect."
+        say ""
+        say "  This is the one the age matters most for. Every other credential"
+        say "  here can be moved off the box; this one cannot, so rotation is the"
+        say "  only thing that bounds what holding it is worth."
     else
         say "  not present. This host either launches no sessions, or"
         say "  authenticates with an API key held elsewhere."
@@ -550,6 +590,195 @@ cmd_radius() {
     return 0
 }
 
+# --- drift ------------------------------------------------------------------
+#
+# What has changed since somebody last said this box was in a known state.
+#
+# NOT DETECTION YET, and worth saying in the program rather than only in the
+# docs: the baseline lives here, so root here can rewrite it as easily as read
+# it - and root here is the case being looked for. It catches a payload that
+# did not think to look, which is most of them, and not one that did.
+#
+# The half that fixes that runs elsewhere: a collector on another machine
+# keeping the baseline, which root here can lie to but cannot reach. This
+# subcommand is what it will call.
+
+BASELINE_DIR=${BASELINE_DIR:-/var/lib/dejima-devbox}
+BASELINE="$BASELINE_DIR/baseline"
+
+# The paths worth watching, which is not all of them.
+#
+# /home and /var/lib/docker churn all day and mean nothing; persistence lives
+# where a working machine is stable. A watchlist that produces noise is one
+# that gets switched off, so the rest is left alone rather than filtered later.
+#
+# The baseline is deliberately not under any of them: state in /etc would
+# report its own changes forever.
+drift_paths() {
+    printf '%s\n' /etc /usr/local/bin /usr/local/sbin
+    local home
+    home=$(devbox_home)
+    [ -d "$home/.ssh" ] && printf '%s\n' "$home/.ssh"
+    [ -d /root/.ssh ] && printf '%s\n' /root/.ssh
+    return 0
+}
+
+# The current state, as sorted lines a baseline can be diffed against.
+#
+# Three kinds of line, because persistence has more than one shape. Hashing
+# alone misses two of them: `systemctl enable` writes a symlink, and a listener
+# is not a file.
+# DRIFT_ERRS names a file the caller creates; every hash this cannot take is
+# recorded there. Swallowing them would be worse than useless: a partial state
+# diffs against a full baseline as a list of REMOVALS, which reads as an
+# intruder deleting things rather than as this program lacking privilege.
+drift_state() {
+    local p
+    while IFS= read -r p; do
+        [ -e "$p" ] || continue
+        find "$p" -type f -print0 2>>"$DRIFT_ERRS" \
+            | xargs -0 -r sha256sum 2>>"$DRIFT_ERRS" \
+            | sed 's/^\([0-9a-f]\{64\}\)  /FILE \1  /' || true
+    done < <(drift_paths)
+
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl list-unit-files --state=enabled --no-legend --no-pager 2>/dev/null \
+            | awk 'NF {print "UNIT " $1}'
+    fi
+    if command -v ss >/dev/null 2>&1; then
+        ss -H -ltn 2>/dev/null | awk 'NF {print "PORT " $4}'
+    fi
+    return 0
+}
+
+# Which collectors could not run, reported rather than skipped.
+#
+# A state missing its UNIT lines because systemctl was absent diffs clean
+# against a baseline that also lacked them - nothing compared to nothing, which
+# is the failure this program is built around not committing.
+drift_missing() {
+    command -v sha256sum >/dev/null 2>&1 || printf 'sha256sum '
+    command -v systemctl >/dev/null 2>&1 || printf 'systemctl '
+    command -v ss        >/dev/null 2>&1 || printf 'ss '
+    return 0
+}
+
+# Packaged files that no longer match what the package shipped.
+#
+# Absolute rather than baselined: dpkg already knows the answer, so this needs
+# no previous run and cannot be defeated by editing one. Editing dpkg's own
+# database defeats it, which is a higher bar.
+drift_dpkg() {
+    command -v dpkg >/dev/null 2>&1 || return 1
+    # Exits non-zero when it finds something, which is the normal case here.
+    dpkg --verify 2>/dev/null | awk 'NF' || true
+}
+
+cmd_drift() {
+    local accept=0 missing state work added removed rc=0 verdict unread
+
+    [ "${1:-}" = --accept ] && accept=1
+
+    missing=$(drift_missing)
+    work=$(mktemp -d) || return 2
+    state="$work/state"
+    DRIFT_ERRS="$work/errs"
+    : > "$DRIFT_ERRS"
+    drift_state | sort > "$state"
+
+    # Almost always "not running as root". Whatever the cause, the state is
+    # partial and nothing useful can be said by comparing it.
+    unread=$(grep -c . "$DRIFT_ERRS" || true)
+    if [ "${unread:-0}" -gt 0 ]; then
+        say ""
+        say "INDETERMINATE: $unread path(s) could not be read, so this state is"
+        say "  partial and comparing it would invent findings. Run with sudo."
+        say ""
+        sed 's/^/    /' "$DRIFT_ERRS" | head -3 >&2
+        verdict INDETERMINATE
+        rm -rf "$work"
+        return 2
+    fi
+
+    if [ "$accept" = 1 ]; then
+        install -m 0755 -d "$BASELINE_DIR"
+        {
+            printf '# dejima-devbox baseline, taken %s\n' "$(date -u +%F)"
+            [ -n "$missing" ] && printf '# NOT COVERED, absent when taken: %s\n' "$missing"
+            cat "$state"
+        } > "$BASELINE.new"
+        chmod 0640 "$BASELINE.new"
+        mv "$BASELINE.new" "$BASELINE"
+        say "Baseline written: $BASELINE ($(grep -c . "$state") entries)"
+        [ -n "$missing" ] && say "  NOT COVERED, absent when taken: $missing"
+        say ""
+        say "  Root on this box can rewrite that file. It bounds an intruder who"
+        say "  did not think to look, which is most of them, and not one who did."
+        rm -rf "$work"
+        return 0
+    fi
+
+    say ""
+    say "== What has changed =="
+    say ""
+
+    if [ ! -r "$BASELINE" ]; then
+        # Not clean. Nothing has been compared, and saying so is the whole point.
+        say "INDETERMINATE: no baseline at $BASELINE."
+        say "  Nothing has been compared, which is not the same as nothing having"
+        say "  changed. Take one on a box you believe is in a known state:"
+        say ""
+        say "    $PROG drift --accept"
+        verdict INDETERMINATE
+        rm -rf "$work"
+        return 2
+    fi
+
+    [ -n "$missing" ] && {
+        say "  NOT COVERED: $missing is absent, so that part was not compared."
+        say ""
+    }
+
+    added=$(comm -13 <(grep -v '^#' "$BASELINE" | sort) "$state" || true)
+    removed=$(comm -23 <(grep -v '^#' "$BASELINE" | sort) "$state" || true)
+
+    if [ -z "$added" ] && [ -z "$removed" ]; then
+        verdict=CLEAN
+        say "CLEAN against the baseline of $(sed -n 's/^# dejima-devbox baseline, taken //p' "$BASELINE" | head -1)."
+    else
+        verdict=DRIFT
+        rc=1
+        say "DRIFT against the baseline of $(sed -n 's/^# dejima-devbox baseline, taken //p' "$BASELINE" | head -1):"
+        say ""
+        [ -n "$added" ]   && printf '%s\n' "$added"   | sed 's/^/  + /' >&2
+        [ -n "$removed" ] && printf '%s\n' "$removed" | sed 's/^/  - /' >&2
+        say ""
+        say "  An ordinary apt upgrade moves a lot of these. Read them, and if"
+        say "  they are yours, say so with: $PROG drift --accept"
+    fi
+
+    # Reported whatever the diff said, because it answers a different question:
+    # the diff knows what changed since you last looked, and this knows what
+    # does not match what the package manager shipped, however long ago.
+    say ""
+    say "Packaged files that no longer match their package:"
+    if ! drift_dpkg > "$state.dpkg" 2>/dev/null; then
+        say "  could not check - no dpkg here"
+    elif [ -s "$state.dpkg" ]; then
+        sed 's/^/  /' "$state.dpkg" >&2
+        say "  Every line is a file dpkg installed and something has since"
+        say "  altered. Some are yours; none are nothing."
+        rc=1
+        verdict=DRIFT
+    else
+        say "  none"
+    fi
+
+    rm -rf "$work"
+    verdict "$verdict"
+    return $rc
+}
+
 # This program describes the machine it runs on. Run inside a container it
 # describes the container, and every reading is real: the gateway is the
 # bridge, the credential is whatever is mounted here, the group memberships
@@ -585,8 +814,17 @@ main() {
     case "${1:-all}" in
         reach)  cmd_reach ;;
         radius) cmd_radius ;;
-        all)    cmd_radius; cmd_reach ;;
-        *)      say "usage: $PROG [reach|radius]"; return 64 ;;
+        drift)  cmd_drift "${2:-}" ;;
+        # Each carries its own exit status, and `all` must not lose one. Without
+        # the collection below, a drift finding followed by a clean reach would
+        # exit 0 and report contained - which is the shape of every mistake this
+        # program is written against.
+        all)    local rc=0
+                cmd_radius || rc=$?
+                cmd_drift  || rc=$?
+                cmd_reach  || rc=$?
+                return $rc ;;
+        *)      say "usage: $PROG [reach|radius|drift [--accept]]"; return 64 ;;
     esac
 }
 

@@ -2,6 +2,7 @@
 version: 1
 title: Baseline, for a devbox built before versions existed
 layers: none
+downtime: none
 snapshot: none
 ---
 

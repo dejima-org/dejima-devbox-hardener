@@ -118,25 +118,57 @@ state_set() {  # state_set KEY VALUE
 
 # Run an upgrade's verify-node command, if it has one.
 #
-# ok        - the command passed, so the console work is in force
-# failed    - it did not, whatever the state file says
-# none      - the upgrade declares no check
-# missing   - it declares one and the command is not installed here
+# Where a verify-node command's program actually is.
 #
-# `missing` is kept apart from `failed` on purpose. A check that could not run
-# has not found anything, and reporting that as a failure would train an
-# operator to ignore the word.
+# $PATH first, then beside this program. The fallback is the point: the upgrade
+# notes tell an operator to run this from a checkout, and a PATH-only lookup
+# fails on a box where nothing is installed yet - which is every box at the
+# moment it is being upgraded. The sister project shipped that bug and it found
+# a real runner.
+#
+# $PATH still wins where both exist, because the installed copy is the one this
+# machine actually runs.
+verify_cmd_path() {  # verify_cmd_path NAME
+    local self_dir
+    command -v "$1" 2>/dev/null && return 0
+    self_dir=$(cd "$(dirname "$(readlink -f "$0")")" && pwd) || return 1
+    [ -x "$self_dir/$1" ] || return 1
+    printf '%s\n' "$self_dir/$1"
+}
+
+# THE EXIT-CODE CONTRACT, which is three states and not two:
+#
+#   0        the console work is in force
+#   2        could not be determined - the check did not run, or ran and could
+#            not tell
+#   other    it is NOT in force, and the machine says so
+#
+# ok        - in force
+# failed    - not in force, whatever the state file says
+# unknown   - it ran and could not tell
+# none      - the upgrade declares no check
+# missing   - it declares one and the command is nowhere to be found
+#
+# `unknown` and `missing` are both kept apart from `failed` on purpose. A check
+# that could not run has not found anything, and reporting that as a failure
+# would tell an operator their console work is missing on the strength of a
+# check that never ran.
 verify_node() {  # verify_node VERSION
-    local note cmd
+    local note cmd prog rest path rc=0
     note=$(note_for "$1") || { printf 'none\n'; return 0; }
     cmd=$(note_field "$note" verify-node)
     [ -n "$cmd" ] || { printf 'none\n'; return 0; }
-    command -v "${cmd%% *}" >/dev/null 2>&1 || { printf 'missing\n'; return 0; }
-    if $cmd >/dev/null 2>&1; then
-        printf 'ok\n'
-    else
-        printf 'failed\n'
-    fi
+    prog=${cmd%% *}
+    rest=${cmd#"$prog"}
+    path=$(verify_cmd_path "$prog") || { printf 'missing\n'; return 0; }
+    # Unquoted on purpose: $rest carries the command's arguments.
+    # shellcheck disable=SC2086
+    "$path" $rest >/dev/null 2>&1 || rc=$?
+    case $rc in
+        0) printf 'ok\n' ;;
+        2) printf 'unknown\n' ;;
+        *) printf 'failed\n' ;;
+    esac
 }
 
 # --- status -----------------------------------------------------------------
@@ -225,10 +257,25 @@ cmd_status() {
         outstanding=1
         rc=1
         say "  v$v  $title"
-        [ "$need_node" = 1 ]  && say "      node:  console work outstanding"
+        if [ "$need_node" = 1 ]; then
+            # Restoring a snapshot older than the console work leaves the rules
+            # on the node and takes the record with the guest. Reporting that as
+            # work to do sends an operator to redo something already done.
+            if [ "$VERIFY" = 1 ] && [ "$(verify_node "$v")" = ok ]; then
+                say "      node:  NOT RECORDED, but its check passes - the work"
+                say "             looks done. Re-record with: $PROG mark-node $v"
+            else
+                say "      node:  console work outstanding"
+            fi
+        fi
         [ "$need_guest" = 1 ] && say "      guest: re-run dejima-devbox-bootstrap from a v$v checkout"
         [ "$(note_field "$note" snapshot)" = required ] \
             && say "      snapshot: REQUIRED after this one"
+        # Downtime on a devbox is a scheduled event - announced, with work
+        # drained first - so which upgrades need a window is planning
+        # information, not a footnote inside the note.
+        [ "$(note_field "$note" downtime)" = window ] \
+            && say "      downtime: NEEDS A WINDOW. The rest of it is live-safe"
         say "      $PROG show $v"
         say ""
     done
@@ -248,6 +295,9 @@ cmd_status() {
                          say "  v$v  FAILED. The check for this upgrade does not pass, so its"
                          say "      console work is not in force whatever the state file says."
                          say "      $PROG show $v" ;;
+                unknown) any=1
+                         say "  v$v  could not tell. $(note_field "$(note_for "$v")" verify-node) ran and"
+                         say "      could not determine the answer, which is not a failure." ;;
                 missing) any=1
                          say "  v$v  could not check - $(note_field "$(note_for "$v")" verify-node) is not installed here." ;;
             esac
@@ -317,6 +367,13 @@ cmd_mark_node() {
             say "$PROG: cannot check - $(note_field "$note" verify-node) is not installed here."
             say "  Recording as unverified rather than refusing, because a missing"
             say "  program is not evidence about your firewall."
+            ;;
+        unknown)
+            say "$PROG: $(note_field "$note" verify-node) could not tell."
+            say "  It ran and reported that it could not determine the answer,"
+            say "  which is not the same as reporting the work is missing."
+            say "  Recording as unverified. Run it yourself to see what it needs:"
+            say "    $(note_field "$note" verify-node)"
             ;;
         none)
             say "$PROG: v$v declares no check, so this is your word for it."

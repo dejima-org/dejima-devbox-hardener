@@ -46,6 +46,9 @@ setup() {
         127.0.0.53          # systemd-resolved's stub, named as NOT an answer
         255.255.255.255     # limited broadcast, in the DHCP rebind note
         169.254.169.254     # the cloud metadata address, named as a target
+        224.0.0.251         # mDNS, named as expected noise in the DROP log.
+                            # Well-known and identical everywhere, so it
+                            # describes nobody's network including this one
 
         10.0.0.0/8          # the five ranges the node firewall drops. Ranges,
         172.16.0.0/12       # not hosts: they name every LAN rather than
