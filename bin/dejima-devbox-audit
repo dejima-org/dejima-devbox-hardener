@@ -675,9 +675,12 @@ drift_dpkg() {
 }
 
 cmd_drift() {
-    local accept=0 missing state work added removed rc=0 verdict unread
+    local accept=0 emit=0 missing state work added removed rc=0 verdict unread
 
-    [ "${1:-}" = --accept ] && accept=1
+    case "${1:-}" in
+        --accept) accept=1 ;;
+        --state)  emit=1 ;;
+    esac
 
     missing=$(drift_missing)
     work=$(mktemp -d) || return 2
@@ -698,6 +701,21 @@ cmd_drift() {
         verdict INDETERMINATE
         rm -rf "$work"
         return 2
+    fi
+
+    # --state prints the state and compares nothing.
+    #
+    # It exists for a watcher on another machine, which keeps the baseline and
+    # does the diff itself. That is the half this program cannot do: root here
+    # can rewrite a baseline kept here, and root here is the case being looked
+    # for. What it cannot do is alter what another machine recorded last week.
+    #
+    # To stdout unconditionally, terminal or not, because this is data rather
+    # than a verdict. A caller asked for it.
+    if [ "$emit" = 1 ]; then
+        cat "$state"
+        rm -rf "$work"
+        return 0
     fi
 
     if [ "$accept" = 1 ]; then
@@ -824,7 +842,7 @@ main() {
                 cmd_drift  || rc=$?
                 cmd_reach  || rc=$?
                 return $rc ;;
-        *)      say "usage: $PROG [reach|radius|drift [--accept]]"; return 64 ;;
+        *)      say "usage: $PROG [reach|radius|drift [--accept|--state]]"; return 64 ;;
     esac
 }
 
