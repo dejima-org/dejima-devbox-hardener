@@ -97,8 +97,15 @@ picks up any change to it.
 ### Check the guest half landed
 
 ```sh
-sudo dejima-devbox-audit reach
+sudo /usr/local/sbin/dejima-devbox-audit reach
 ```
+
+The full path because these install to `/usr/local/sbin`, and `sudo` reaches
+that only if your `sudoers` sets a `secure_path` including it — without one,
+`sudo` inherits your own PATH, and Debian leaves every `sbin` off a non-root
+PATH. `sudo printenv PATH` says which you have; bootstrap says so too if it
+noticed. Elsewhere in these docs the bare name is used, and works wherever
+`secure_path` is set.
 
 Two `PASS` lines now, not one. The second is the IPv6 half. If it says `FAIL`,
 the node work above is not in force — go back to §1 and check `ip6tables`, not
@@ -107,7 +114,7 @@ the node work above is not in force — go back to §1 and check `ip6tables`, no
 ## 3. Record the node half
 
 ```sh
-sudo dejima-devbox-upgrade mark-node 2
+sudo /usr/local/sbin/dejima-devbox-upgrade mark-node 2
 ```
 
 This runs `dejima-devbox-audit reach` first and refuses to record the assertion

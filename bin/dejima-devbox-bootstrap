@@ -315,6 +315,26 @@ install -m 0755 "$SRC/bin/dejima-devbox-audit" "$BIN_DIR/dejima-devbox-audit"
 
 install -m 0755 "$SRC/bin/dejima-devbox-upgrade" "$BIN_DIR/dejima-devbox-upgrade"
 
+# Reachability, not just existence.
+#
+# Everything installs to /usr/local/sbin and every instruction in this
+# repository reads `sudo dejima-devbox-...`. That works only where sudoers sets
+# a secure_path including sbin; without one, sudo inherits the caller's PATH,
+# and Debian leaves every sbin directory off a non-root PATH. The result is a
+# correct install whose documented commands all report "command not found",
+# which reads as a broken install rather than as a PATH.
+#
+# This runs under sudo, so its own PATH is the one those later commands will
+# get - which makes `command -v` here the real question rather than a proxy.
+if [ "$(command -v dejima-devbox-audit 2>/dev/null)" != "$BIN_DIR/dejima-devbox-audit" ]; then
+    say ""
+    say "NOTE: $BIN_DIR is not on the PATH sudo gives you here, so"
+    say "  'sudo dejima-devbox-audit ...' will not be found. Either use the full"
+    say "  path, as $BIN_DIR/dejima-devbox-audit, or add a secure_path to"
+    say "  sudoers that includes it. Nothing about this install is wrong."
+    say ""
+fi
+
 # The upgrade notes travel with the program, so an operator on a devbox with no
 # checkout can still read what an upgrade asks of them. The installed copy
 # knows only the versions that existed when it ran, and says so rather than
