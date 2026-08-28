@@ -583,40 +583,28 @@ cmd_radius() {
 
 # --- drift ------------------------------------------------------------------
 #
-# What has changed on this box since somebody last said it was in a known
-# state.
+# What has changed since somebody last said this box was in a known state.
 #
-# THIS IS NOT DETECTION YET, and the distinction is worth stating in the
-# program rather than only in the docs. The baseline lives on this machine, so
-# root here can rewrite it as easily as read it - and root here is exactly the
-# case being looked for.
+# NOT DETECTION YET, and worth saying in the program rather than only in the
+# docs: the baseline lives here, so root here can rewrite it as easily as read
+# it - and root here is the case being looked for. It catches a payload that
+# did not think to look, which is most of them, and not one that did.
 #
-# What it catches is a payload that did not think to look, which is most of
-# them: the adversary in this model is a prompt injection or a dependency that
-# did not choose this devbox, and is unlikely to have anticipated one box's
-# baseline file. It is not a control against someone who has already escaped
-# and gone looking, and nothing here should be read as claiming otherwise.
-#
-# The half that fixes it runs elsewhere: a collector on another machine, which
-# keeps the baseline and compares what this reports against what it remembers.
-# Root here can lie about the current state; it cannot reach what the collector
-# recorded last week. That is deliberately the same command either way - this
-# subcommand is what the collector will call.
+# The half that fixes that runs elsewhere: a collector on another machine
+# keeping the baseline, which root here can lie to but cannot reach. This
+# subcommand is what it will call.
 
 BASELINE_DIR=${BASELINE_DIR:-/var/lib/dejima-devbox}
 BASELINE="$BASELINE_DIR/baseline"
 
 # The paths worth watching, which is not all of them.
 #
-# A devbox churns: /home, /var/lib/docker and every build cache change all day
-# and mean nothing. Persistence does not live there. It lives where a working
-# machine is stable - unit files, cron, /etc, and the few directories a local
-# binary gets dropped into - so those are hashed and the rest is left alone
-# rather than filtered afterwards. A watchlist that produces noise is one that
-# gets switched off.
+# /home and /var/lib/docker churn all day and mean nothing; persistence lives
+# where a working machine is stable. A watchlist that produces noise is one
+# that gets switched off, so the rest is left alone rather than filtered later.
 #
-# The baseline is deliberately NOT under any of these. Keeping state in /etc
-# would make the file report its own changes, which is noise that never stops.
+# The baseline is deliberately not under any of them: state in /etc would
+# report its own changes forever.
 drift_paths() {
     printf '%s\n' /etc /usr/local/bin /usr/local/sbin
     local home
@@ -628,15 +616,13 @@ drift_paths() {
 
 # The current state, as sorted lines a baseline can be diffed against.
 #
-# Three kinds of line, because persistence takes more than one shape: a file
-# that changed, a unit that is newly enabled, and a port that is newly open.
-# Hashing alone would miss the last two entirely - `systemctl enable` writes a
-# symlink, and a listener is not a file at all.
+# Three kinds of line, because persistence has more than one shape. Hashing
+# alone misses two of them: `systemctl enable` writes a symlink, and a listener
+# is not a file.
 # DRIFT_ERRS names a file the caller creates; every hash this cannot take is
-# recorded there. Swallowing those would be worse than useless: a state missing
-# the files it could not read diffs against a full baseline as a list of
-# removals, which reads as an intruder deleting things rather than as this
-# program running without the privilege to look.
+# recorded there. Swallowing them would be worse than useless: a partial state
+# diffs against a full baseline as a list of REMOVALS, which reads as an
+# intruder deleting things rather than as this program lacking privilege.
 drift_state() {
     local p
     while IFS= read -r p; do
@@ -656,12 +642,11 @@ drift_state() {
     return 0
 }
 
-# Which of the three collectors could not run.
+# Which collectors could not run, reported rather than skipped.
 #
-# Reported rather than skipped. A state file missing its UNIT lines because
-# systemctl was absent would diff clean against a baseline that also lacked
-# them, and a check that quietly compares nothing to nothing is the failure
-# this whole program is built around not committing.
+# A state missing its UNIT lines because systemctl was absent diffs clean
+# against a baseline that also lacked them - nothing compared to nothing, which
+# is the failure this program is built around not committing.
 drift_missing() {
     command -v sha256sum >/dev/null 2>&1 || printf 'sha256sum '
     command -v systemctl >/dev/null 2>&1 || printf 'systemctl '
@@ -669,12 +654,11 @@ drift_missing() {
     return 0
 }
 
-# Packaged files whose contents no longer match what the package shipped.
+# Packaged files that no longer match what the package shipped.
 #
-# Absolute rather than baselined: dpkg already knows what the file should be,
-# so this needs no record of a previous run and cannot be defeated by an
-# intruder editing one. It can be defeated by editing dpkg's own database,
-# which is a higher bar and a noisier thing to do.
+# Absolute rather than baselined: dpkg already knows the answer, so this needs
+# no previous run and cannot be defeated by editing one. Editing dpkg's own
+# database defeats it, which is a higher bar.
 drift_dpkg() {
     command -v dpkg >/dev/null 2>&1 || return 1
     # Exits non-zero when it finds something, which is the normal case here.
