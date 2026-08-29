@@ -238,3 +238,78 @@ stub_state() {
     run main all
     [ "$status" -ne 0 ]
 }
+
+# --- what the collector can see ----------------------------------------------
+#
+# Three things it could not, each a way to persist that left every hash it took
+# unchanged.
+
+@test "a symlink is recorded, since hashing cannot see one" {
+    # `find -type f` returns nothing for a symlink, so replacing a watched
+    # binary with a link to another one removed a FILE line and added nothing.
+    # A removal reads as tidying rather than as substitution.
+    scratch="$BATS_TEST_TMPDIR/links"
+    mkdir -p "$scratch"
+    echo real > "$scratch/binary"
+    ln -s /bin/sh "$scratch/swapped"
+    drift_paths() { printf '%s\n' "$scratch"; }
+    DRIFT_ERRS="$BATS_TEST_TMPDIR/errs"; : > "$DRIFT_ERRS"
+    run drift_state
+    [[ "$output" == *"LINK $scratch/swapped -> /bin/sh"* ]]
+}
+
+@test "a udp listener is recorded, not only tcp" {
+    # -ltn is TCP only. A beacon binding a datagram socket produced no line.
+    scratch="$BATS_TEST_TMPDIR/empty"; mkdir -p "$scratch"
+    drift_paths() { printf '%s\n' "$scratch"; }
+    DRIFT_ERRS="$BATS_TEST_TMPDIR/errs"; : > "$DRIFT_ERRS"
+    ss() { printf 'udp UNCONN 0 0 0.0.0.0:1194 0.0.0.0:*\ntcp LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\n'; }
+    export -f ss 2>/dev/null || true
+    run drift_state
+    [[ "$output" == *"PORT udp 0.0.0.0:1194"* ]]
+    [[ "$output" == *"PORT tcp 0.0.0.0:22"* ]]
+}
+
+@test "the port line reads the address, not the column that -u shifted" {
+    # Adding -u adds the netid column, so the local address moves from field 4
+    # to field 5 and field 4 becomes the send queue. A flag added without moving
+    # the field would record a queue depth as a port, on every line, quietly.
+    scratch="$BATS_TEST_TMPDIR/empty2"; mkdir -p "$scratch"
+    drift_paths() { printf '%s\n' "$scratch"; }
+    DRIFT_ERRS="$BATS_TEST_TMPDIR/errs"; : > "$DRIFT_ERRS"
+    ss() { printf 'tcp LISTEN 0 128 192.0.2.5:8080 0.0.0.0:*\n'; }
+    export -f ss 2>/dev/null || true
+    run drift_state
+    [[ "$output" == *"PORT tcp 192.0.2.5:8080"* ]]
+    [[ "$output" != *"PORT tcp 128"* ]]
+}
+
+@test "the paths cover persistence that needs no root" {
+    # A dejima session runs as this account. It can write a user unit, a
+    # crontab, a shell rc file or a binary on its own PATH without ever needing
+    # the container escape, and none of those was watched.
+    # H, not "home": drift_paths declares `local home` before it calls
+    # devbox_home, so a stub reading $home sees that empty local under bash's
+    # dynamic scoping and trips set -u.
+    H="$BATS_TEST_TMPDIR/home"
+    mkdir -p "$H/.config/systemd/user" "$H/.local/bin" "$H/.ssh"
+    echo x > "$H/.bashrc"
+    devbox_home() { printf '%s\n' "$H"; }
+    run drift_paths
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$H/.config/systemd/user"* ]]
+    [[ "$output" == *"$H/.local/bin"* ]]
+    [[ "$output" == *"$H/.bashrc"* ]]
+}
+
+@test "the home directory itself is not watched, only named files under it" {
+    # It holds the work this box exists for. Hashing it would be enormous and
+    # would drift on every save, which is the shape of alarm that gets muted.
+    H="$BATS_TEST_TMPDIR/home2"
+    mkdir -p "$H/.ssh"
+    echo x > "$H/.bashrc"
+    devbox_home() { printf '%s\n' "$H"; }
+    run drift_paths
+    [ "$(printf '%s\n' "$output" | grep -cx "$H")" -eq 0 ]
+}
+

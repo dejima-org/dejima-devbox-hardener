@@ -616,10 +616,29 @@ BASELINE="$BASELINE_DIR/baseline"
 # report its own changes forever.
 drift_paths() {
     printf '%s\n' /etc /usr/local/bin /usr/local/sbin
-    local home
+    local home f
     home=$(devbox_home)
     [ -d "$home/.ssh" ] && printf '%s\n' "$home/.ssh"
     [ -d /root/.ssh ] && printf '%s\n' /root/.ssh
+
+    # Persistence that does not need root, and so does not need the container
+    # escape either. A dejima session runs as this account: it can write a user
+    # unit, a crontab, a shell rc file, or a binary on its own PATH, and none of
+    # those touched anything watched above.
+    #
+    # A crontab is not in /etc. `crontab -e` writes to the spool, which is the
+    # whole point of it being a separate command.
+    [ -d "$home/.config/systemd/user" ] && printf '%s\n' "$home/.config/systemd/user"
+    [ -d "$home/.local/bin" ] && printf '%s\n' "$home/.local/bin"
+    [ -d /var/spool/cron/crontabs ] && printf '%s\n' /var/spool/cron/crontabs
+
+    # Named individually rather than by taking the home directory, which holds
+    # the work this box exists for and would be both enormous and drift on every
+    # save. find treats a file argument as a one-entry tree, so these arrive as
+    # FILE lines like everything else.
+    for f in .bashrc .bash_profile .bash_aliases .profile .zshrc .zshenv; do
+        [ -f "$home/$f" ] && printf '%s\n' "$home/$f"
+    done
     return 0
 }
 
@@ -639,14 +658,28 @@ drift_state() {
         find "$p" -type f -print0 2>>"$DRIFT_ERRS" \
             | xargs -0 -r sha256sum 2>>"$DRIFT_ERRS" \
             | sed 's/^\\\{0,1\}\([0-9a-f]\{64\}\)  /FILE \1  /' || true
+
+        # SYMLINKS, which -type f does not see at all. Replacing a watched
+        # binary with a link to another one changed no FILE line and no hash:
+        # the file is simply gone from the listing, and a removal reads as
+        # tidying rather than as substitution. It is also how a user unit gets
+        # enabled, since that writes a symlink into a .wants directory.
+        find "$p" -type l -printf 'LINK %p -> %l\n' 2>>"$DRIFT_ERRS" || true
     done < <(drift_paths)
 
     if command -v systemctl >/dev/null 2>&1; then
         systemctl list-unit-files --state=enabled --no-legend --no-pager 2>/dev/null \
             | awk 'NF {print "UNIT " $1}'
     fi
+    # UDP as well as TCP. -ltn is TCP only, so a UDP listener was invisible: a
+    # beacon or a backdoor binding a datagram socket produced no line at all.
+    #
+    # The netid is printed because adding -u ADDS A COLUMN. With -t alone the
+    # local address is field 4; with both it is field 5, and field 4 is the
+    # send queue. A flag added without moving the field would have recorded a
+    # queue depth as a port, quietly, on every line.
     if command -v ss >/dev/null 2>&1; then
-        ss -H -ltn 2>/dev/null | awk 'NF {print "PORT " $4}'
+        ss -H -ltun 2>/dev/null | awk 'NF {print "PORT " $1 " " $5}'
     fi
     return 0
 }
