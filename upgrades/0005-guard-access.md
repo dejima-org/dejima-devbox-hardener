@@ -64,8 +64,14 @@ tried is a restriction nobody has.
 
 ## 3. Record it
 
+**From the checkout, not from `/usr/local/sbin`.** Nothing in this upgrade runs
+bootstrap, so the installed copy still holds the notes it was installed with —
+and it will tell you there is no note for v5, which is true of the copy and not
+of this repository.
+
 ```sh
-sudo /usr/local/sbin/dejima-devbox-upgrade mark-node 5
+cd ~/dejima-devbox-hardener
+sudo ./bin/dejima-devbox-upgrade mark-node 5
 ```
 
 v5 declares no check. Nothing in the guest can see a firewall rule on the node,
