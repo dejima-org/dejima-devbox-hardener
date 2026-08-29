@@ -7,7 +7,7 @@ snapshot: required
 verify-node: dejima-devbox-audit reach
 ---
 
-# v2 — the LAN boundary gains IPv6 and the CGNAT range
+# v2: the LAN boundary gains IPv6 and the CGNAT range
 
 Two rules on the hypervisor, one package and a re-run of bootstrap in the guest,
 and a fresh snapshot. Budget twenty minutes, most of it waiting for the console.
@@ -18,7 +18,7 @@ correct, alarming, and not about anything you did wrong.
 
 ## Why
 
-Until you do this, **your devbox reaches its neighbours over IPv6** — on a
+Until you do this, **your devbox reaches its neighbours over IPv6**: on a
 network with no IPv6 in it, because every Linux host answers on `fe80::`
 regardless. All four v4 DROPs are in force and irrelevant, and
 `dejima-devbox-audit reach` reports `PASS`, because it probes
@@ -27,7 +27,7 @@ regardless. All four v4 DROPs are in force and irrelevant, and
 Why the family is dropped whole rather than enumerated:
 [the threat model](../docs/threat-model.md#the-lan-boundary-is-two-boundaries).
 
-## 1. Node — two rules in the Proxmox console
+## 1. Node: two rules in the Proxmox console
 
 **Datacenter → Firewall → Security Group → `dejima-devbox-hardener`.**
 
@@ -36,8 +36,8 @@ Add these two. They are rules 11 and 12 of
 
 | # | Direction | Action | Protocol | Dest. port | Source / Dest |
 | --- | --- | --- | --- | --- | --- |
-| 11 | out | DROP | — | — | **Dest:** `100.64.0.0/10` |
-| 12 | out | DROP | — | — | **Dest:** `::/0` |
+| 11 | out | DROP | - | - | **Dest:** `100.64.0.0/10` |
+| 12 | out | DROP | - | - | **Dest:** `::/0` |
 
 **Both go at the bottom, below every existing rule.** The console inserts each
 new rule at the *top* of the list, so a rule left where it lands sits above your
@@ -47,7 +47,7 @@ and the devbox stops reaching its forge. Drag each one down as you add it.
 Nothing else in the group changes. You are appending, not re-entering.
 
 **If the console rejects `::/0`**, enter four rules in rule 12's position
-instead — `fe80::/10`, `fc00::/7`, `ff00::/8`, `2000::/3` — which cover the same
+instead: `fe80::/10`, `fc00::/7`, `ff00::/8`, `2000::/3`, which cover the same
 space. Prefer the single line where it is accepted: four entries are four
 chances to enter three.
 
@@ -67,7 +67,7 @@ An IPv6 rule is compiled into `ip6tables` and is **absent from `iptables -S`**,
 so the v4 table shows rule 12 missing whether it is there or not. Checking the
 wrong table is the most likely way to conclude this worked when it did not.
 
-## 2. Guest — the package, then bootstrap
+## 2. Guest: the package, then bootstrap
 
 ```sh
 sudo apt-get install -y iputils-ping
@@ -102,14 +102,14 @@ sudo /usr/local/sbin/dejima-devbox-audit reach
 ```
 
 The full path because these install to `/usr/local/sbin`, and `sudo` reaches
-that only if your `sudoers` sets a `secure_path` including it — without one,
+that only if your `sudoers` sets a `secure_path` including it: without one,
 `sudo` inherits your own PATH, and Debian leaves every `sbin` off a non-root
 PATH. `sudo printenv PATH` says which you have; bootstrap says so too if it
 noticed. Elsewhere in these docs the bare name is used, and works wherever
 `secure_path` is set.
 
 Two `PASS` lines now, not one. The second is the IPv6 half. If it says `FAIL`,
-the node work above is not in force — go back to §1 and check `ip6tables`, not
+the node work above is not in force: go back to §1 and check `ip6tables`, not
 `iptables`. If it says `INDETERMINATE`, `ping` is missing.
 
 ## 3. Record the node half
@@ -133,7 +133,7 @@ out mid-procedure.
 **Take a fresh snapshot, and delete the pre-upgrade one.**
 
 A devbox has no scheduled rollback, so nothing undoes this on a timer. What
-would undo it is you, later, restoring a snapshot taken this morning — which
+would undo it is you, later, restoring a snapshot taken this morning, which
 boots fine, passes its own v1 checks, and is missing the IPv6 rule's guest-side
 counterpart while the node keeps the rule. `dejima-devbox-upgrade status` would
 then report `guest_version` behind `node_version`, which is the pair disagreeing
@@ -154,7 +154,7 @@ still in force.
 
 **From the checkout, not from `$PATH`.** The installed copy at
 `/usr/local/sbin` knows only the upgrades that existed when it was installed, so
-it cannot tell you about a version released since — it says so rather than
+it cannot tell you about a version released since: it says so rather than
 reporting "up to date", but a checkout is the answer that means something.
 
 This is also what to run in six months. `status` re-checks everything already

@@ -49,3 +49,30 @@ setup() {
     dup=$(awk 'BEGIN{RS=""} length($0)>150 {gsub(/\n/," "); print}' "$tmp" | sort | uniq -d)
     [ -n "$dup" ]
 }
+
+@test "no em-dashes, anywhere this project publishes" {
+    # House style across the organisation, and the punctuation most reliably
+    # read as machine-written.
+    #
+    # Built from its bytes rather than written out, or this file is the one hit
+    # the check reports and the only way to pass is to exempt it.
+    dash=$(printf '\xe2\x80\x94')
+    found=$(cd "$REPO" && git ls-files | xargs grep -nF "$dash" 2>/dev/null || true)
+    [ -z "$found" ] || { echo "$found"; false; }
+}
+
+@test "no table cell was left holding punctuation instead of a value" {
+    # Replacing em-dashes across the docs corrupted the firewall rule table:
+    # its "not applicable" cells were em-dashes, and a blind substitution
+    # turned `| - | - |` into `|: |: |` in the one table that documents the
+    # primary control. Nothing about the rendered page looked obviously wrong.
+    fails=""
+    while IFS= read -r f; do
+        bad=$(grep -n '|[[:space:]]*[:;,][[:space:]]*|' "$REPO/$f" || true)
+        [ -z "$bad" ] || fails="$fails\n  $f: $bad"
+    done < <(cd "$REPO" && git ls-files '*.md')
+    if [ -n "$fails" ]; then
+        printf 'table cells containing only punctuation:%b\n' "$fails" >&2
+        false
+    fi
+}

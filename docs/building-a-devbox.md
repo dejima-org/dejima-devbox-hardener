@@ -205,7 +205,7 @@ that matters: a check believed when it does not know.
 node's DROPs name IPv4 ranges and match none of that traffic, so a VM that
 reaches the whole LAN over IPv6 passes every check above with nothing to show
 for it. This one asks the segment who is there and counts the answers. It uses
-`ping`, from `iputils-ping`, which §5's bootstrap installs — without it the
+`ping`, from `iputils-ping`, which §5's bootstrap installs: without it the
 check reports `INDETERMINATE`, which is again not a pass.
 
 If it says `FAIL`, the fix is rule 12 on the node, not a sysctl in here. See
@@ -224,7 +224,7 @@ possible to whoever eventually takes the guard: a forced command, and a sudoers
 rule naming the same two commands.
 
 **Two halves on two machines.** The sudoers rule is below, on this box. The key
-is installed *from the guard*, because that is where the key is — it is
+is installed *from the guard*, because that is where the key is: it is
 generated there and never leaves. Do this half first, or the guard's own check
 of its access will fail on a rule that is not there yet.
 
@@ -240,7 +240,7 @@ Substitute your own account for `user`. `visudo -c` before you log out: a
 sudoers file that will not parse takes sudo down with it, and this box has no
 root password to fall back on.
 
-**Then the key, run on the guard rather than here**, as yourself — it connects
+**Then the key, run on the guard rather than here**, as yourself: it connects
 with your own credentials, and installs the guard's key rather than using it:
 
 ```sh
@@ -266,7 +266,7 @@ key live in the gap between the two steps.
 **Why a wrapper rather than the key naming the audit directly.** The obvious
 line is `command="dejima-devbox-audit ${SSH_ORIGINAL_COMMAND##* }"`, taking the
 last word of what was asked for. It does not work: `drift --state` becomes
-`--state`, which is not a subcommand — so drift collection fails on every cycle
+`--state`, which is not a subcommand, so drift collection fails on every cycle
 while `reach` keeps working, and the box looks watched when half of it is not.
 
 `dejima-guard-shell` whitelists the two exact commands instead. Whitelisting
@@ -274,13 +274,13 @@ says what may run; sanitising tries to describe what may not, and gets it wrong
 in ways that are quiet.
 
 **Why the sudoers line names arguments.** `NOPASSWD: /usr/local/sbin/dejima-devbox-audit`
-alone would also permit `drift --accept`, which rewrites the baseline — so a key
+alone would also permit `drift --accept`, which rewrites the baseline, so a key
 taken off the guard could tell the devbox that whatever is on it now is normal.
 The two exact invocations grant collection and not that.
 
 **If you test by hand, pass `-o IdentitiesOnly=yes`.** `-i` *adds* a key to the
-ones ssh offers rather than restricting it to that one, so your own key — or an
-agent holding it — authenticates instead, no forced command applies, and every
+ones ssh offers rather than restricting it to that one, so your own key, or an
+agent holding it: authenticates instead, no forced command applies, and every
 check reports the restriction missing when it is fine.
 
 ```sh
@@ -288,7 +288,7 @@ ssh -i guard_key -o IdentitiesOnly=yes you@devbox 'dejima-devbox-audit reach'
 ssh -i guard_key -o IdentitiesOnly=yes you@devbox 'cat /etc/shadow'   # refused: ...
 ```
 
-The node also has to let that host reach port 22 —
+The node also has to let that host reach port 22:
 [proxmox/README.md](../proxmox/README.md#one-more-if-you-run-dejima-guard-elsewhere)
 has the rule, and it is unnecessary if the guard is already on your admin
 subnet.

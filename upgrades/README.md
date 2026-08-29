@@ -2,7 +2,7 @@
 
 One file per version. `000N-slug.md` is what an operator has to do to reach
 version `N` from version `N-1`, and there is one for every version including the
-ones that need nothing — an absent file would be indistinguishable from a file
+ones that need nothing: an absent file would be indistinguishable from a file
 nobody wrote.
 
 `dejima-devbox-upgrade` reads these. So does a person, and the file is written
@@ -50,7 +50,7 @@ a record of something this repository did, so it is as reliable as the install.
 
 `node_version` is written by `dejima-devbox-upgrade mark-node`, by an operator
 saying they did the console work. Nothing in the guest can read the hypervisor's
-rules — that is the whole reason those rules are worth having — so this is an
+rules, which is the whole reason those rules are worth having, so this is an
 assertion, and the tool treats it as one. Where an upgrade names a
 `verify-node` command, the tool runs it and will contradict the assertion.
 
@@ -64,7 +64,7 @@ a fact worth reporting; a single number would have quietly averaged it.
 `required` means the change is lost without a new snapshot, or that an old
 snapshot becomes dangerous to restore once the change is made.
 
-A devbox has no scheduled rollback — that is
+A devbox has no scheduled rollback: that is
 [rejected, with reasons](../docs/threat-model.md#rejected-with-reasons), because
 rollback destroys uncommitted work. So an upgrade is not undone on a timer here
 the way it is on a CI runner. What it *is* exposed to is a manual restore: a

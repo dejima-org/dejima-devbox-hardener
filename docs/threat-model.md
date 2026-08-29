@@ -237,7 +237,7 @@ there is one.
   because the proxy that holds it has to read it here. An escape converts "can
   use the API while this session lasts" into "holds the token".
 - **The LAN exceptions.** The forge and the resolver are reachable from this VM
-  on the ports listed, by anything on it — and the ntfy server too, if you use
+  on the ports listed, by anything on it, and the ntfy server too, if you use
   dejima's remote access, which needs a third pinhole for a push that leaves
   the guest. "No LAN access" is not literally true and never was.
 - **Inbound exposure.** The node's inbound list is yours to keep short and
