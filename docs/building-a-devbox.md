@@ -230,13 +230,13 @@ of its access will fail on a rule that is not there yet.
 
 ```sh
 sudo tee /etc/sudoers.d/dejima-guard >/dev/null <<'SUDOERS'
-brad ALL=(root) NOPASSWD: /usr/local/sbin/dejima-devbox-audit reach, /usr/local/sbin/dejima-devbox-audit drift --state
+user ALL=(root) NOPASSWD: /usr/local/sbin/dejima-devbox-audit reach, /usr/local/sbin/dejima-devbox-audit drift --state
 SUDOERS
 sudo chmod 0440 /etc/sudoers.d/dejima-guard
 sudo visudo -c
 ```
 
-Substitute your own account for `brad`. `visudo -c` before you log out: a
+Substitute your own account for `user`. `visudo -c` before you log out: a
 sudoers file that will not parse takes sudo down with it, and this box has no
 root password to fall back on.
 

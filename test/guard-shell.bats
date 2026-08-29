@@ -128,6 +128,16 @@ run_shell() { SSH_ORIGINAL_COMMAND="$1" AUDIT="$STUB/audit" PATH="$STUB:$PATH" r
     ! grep -rq 'building-a-devbox.md#7-' "$REPO/docs" "$REPO/upgrades" "$REPO/proxmox"
 }
 
+@test "the sudoers example names a placeholder account, not a real one" {
+    # A published runbook carrying the account name of the box it was written
+    # on is an operator detail leaking into the deliverable, and it reads as
+    # instruction rather than example - the next person pastes it verbatim and
+    # grants sudo to an account that does not exist there.
+    line=$(grep 'NOPASSWD' "$REPO/docs/building-a-devbox.md")
+    [[ "$line" == user\ * ]]
+    grep -q 'Substitute your own account' "$REPO/docs/building-a-devbox.md"
+}
+
 @test "the sudoers line in the runbook names both permitted invocations" {
     # If it named the program alone it would also permit drift --accept, and
     # the forced command would be the only thing standing in the way.
