@@ -214,6 +214,8 @@ that distinction is not pedantry.
 
 ## 7. Let the guard in, if you run one
 
+<a id="guard-access"></a>
+
 Skip this if you do not run
 [dejima-guard](https://gitbox.branderson.io/dejima/dejima-guard).
 
@@ -221,18 +223,10 @@ It collects from this box over SSH. Two things make that worth as little as
 possible to whoever eventually takes the guard: a forced command, and a sudoers
 rule naming the same two commands.
 
-**As your own account**, not root — this box has no root password, which is
-what §1 built.
-
-```sh
-mkdir -p ~/.ssh && chmod 700 ~/.ssh
-printf 'command="/usr/local/sbin/dejima-guard-shell",no-port-forwarding,no-agent-forwarding,no-pty,no-X11-forwarding %s\n' \
-  "$(cat guard_key.pub)" >> ~/.ssh/authorized_keys
-chmod 600 ~/.ssh/authorized_keys
-```
-
-Then the sudo half, because the audit needs root and you do not want a password
-prompt on a connection nobody is sitting at:
+**Two halves on two machines.** The sudoers rule is below, on this box. The key
+is installed *from the guard*, because that is where the key is — it is
+generated there and never leaves. Do this half first, or the guard's own check
+of its access will fail on a rule that is not there yet.
 
 ```sh
 sudo tee /etc/sudoers.d/dejima-guard >/dev/null <<'SUDOERS'
@@ -245,6 +239,29 @@ sudo visudo -c
 Substitute your own account for `brad`. `visudo -c` before you log out: a
 sudoers file that will not parse takes sudo down with it, and this box has no
 root password to fall back on.
+
+**Then the key, run on the guard rather than here**, as yourself — it connects
+with your own credentials, and installs the guard's key rather than using it:
+
+```sh
+dejima-guard-install-key you@devbox
+```
+
+That writes the restricted line in a single append and then proves the
+restriction: two commands that must work, two that must come back `refused`.
+Watch those four results. A restriction nobody tried is a restriction nobody
+has, and this one stands between a key taken off the guard and a shell on the
+box the guard holds the evidence about.
+
+By hand, if you are not using that tool, the whole line is:
+
+```
+command="/usr/local/sbin/dejima-guard-shell",no-port-forwarding,no-agent-forwarding,no-pty,no-X11-forwarding ssh-ed25519 AAAA…the guard's public key
+```
+
+Append it **with the options already on it**, in one write. `ssh-copy-id`, or
+copying the key and adding the restriction afterwards, leaves an unrestricted
+key live in the gap between the two steps.
 
 **Why a wrapper rather than the key naming the audit directly.** The obvious
 line is `command="dejima-devbox-audit ${SSH_ORIGINAL_COMMAND##* }"`, taking the
@@ -261,19 +278,15 @@ alone would also permit `drift --accept`, which rewrites the baseline — so a k
 taken off the guard could tell the devbox that whatever is on it now is normal.
 The two exact invocations grant collection and not that.
 
-**Test both halves before relying on them.** A restriction nobody tried is a
-restriction nobody has.
+**If you test by hand, pass `-o IdentitiesOnly=yes`.** `-i` *adds* a key to the
+ones ssh offers rather than restricting it to that one, so your own key — or an
+agent holding it — authenticates instead, no forced command applies, and every
+check reports the restriction missing when it is fine.
 
 ```sh
-ssh -i guard_key you@devbox 'dejima-devbox-audit reach'          # a verdict
-ssh -i guard_key you@devbox 'dejima-devbox-audit drift --state'  # FILE/UNIT/PORT lines
-ssh -i guard_key you@devbox 'cat /etc/shadow'                    # refused: ...
-ssh -i guard_key you@devbox 'dejima-devbox-audit drift --accept' # refused: ...
+ssh -i guard_key -o IdentitiesOnly=yes you@devbox 'dejima-devbox-audit reach'
+ssh -i guard_key -o IdentitiesOnly=yes you@devbox 'cat /etc/shadow'   # refused: ...
 ```
-
-The last two must print `refused` and nothing else. If they do not, stop and
-fix it: the guard's key is held on a machine that holds the evidence about this
-one, which is a machine somebody wanting to erase that evidence would want.
 
 The node also has to let that host reach port 22 —
 [proxmox/README.md](../proxmox/README.md#one-more-if-you-run-dejima-guard-elsewhere)

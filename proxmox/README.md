@@ -319,7 +319,7 @@ that away without looking like it had.
 **What it grants is the chance to attempt SSH, not a shell.** The key is
 restricted at the guest end, by a forced command and a sudoers rule that name
 the same two read-only invocations — see
-[§7 of the guest runbook](../docs/building-a-devbox.md#7-let-the-guard-in-if-you-run-one).
+["Let the guard in" in the guest runbook](../docs/building-a-devbox.md#guard-access).
 The guard is a machine holding the evidence about this one, so it is worth
 assuming somebody will eventually want it.
 

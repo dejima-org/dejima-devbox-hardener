@@ -47,20 +47,25 @@ The rule above grants the chance to attempt SSH. What decides whether that is
 worth anything is the key, and the key lives on a machine that is not this one
 — a machine holding the evidence about this one.
 
-[§7 of the runbook](../docs/building-a-devbox.md#7-let-the-guard-in-if-you-run-one)
-has both halves: a forced command pointing at `dejima-guard-shell`, and a
-sudoers rule naming the same two invocations. Together they mean a key taken
-off the guard collects and does nothing else — in particular it cannot run
-`drift --accept`, which would let it tell this box that whatever is on it now
-is normal.
+[Let the guard in](../docs/building-a-devbox.md#guard-access) has both halves: a
+forced command pointing at `dejima-guard-shell`, and a sudoers rule naming the
+same two invocations. Together they mean a key taken off the guard collects and
+does nothing else — in particular it cannot run `drift --accept`, which would
+let it tell this box that whatever is on it now is normal.
+
+**The two halves run on two machines.** The sudoers rule is applied here. The
+key is installed from the guard, with `dejima-guard-install-key`, because the
+key is generated there and never leaves — there is no copy of it on this box to
+point a command at. Do the sudoers half first, or the guard's check of its own
+access fails on a rule that is not there yet.
 
 **It connects as your own account, not root.** This devbox has no root
 password, which is what its runbook built, so the guard elevates through sudo
 for exactly those two commands rather than logging in as root.
 
-**Test both halves before relying on them.** The runbook has the four commands:
-two that must work and two that must print `refused`. A restriction nobody
-tried is a restriction nobody has.
+**Watch the four results `dejima-guard-install-key` prints.** Two commands must
+work and two must come back `refused`. A restriction nobody tried is a
+restriction nobody has.
 
 ## 3. Record it
 

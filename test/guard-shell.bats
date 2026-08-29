@@ -100,6 +100,34 @@ run_shell() { SSH_ORIGINAL_COMMAND="$1" AUDIT="$STUB/audit" PATH="$STUB:$PATH" r
     grep -q 'bin/dejima-guard-shell' "$REPO/bin/dejima-devbox-bootstrap"
 }
 
+@test "the runbook never reads the guard's key from a file on the devbox" {
+    # The key is generated on the guard and never leaves it, so there is no
+    # guard_key.pub on this box to cat. The section used to open with a block
+    # that did exactly that, and it failed on the first line for everyone who
+    # followed it.
+    ! grep -q 'cat guard_key.pub' "$REPO/docs/building-a-devbox.md"
+}
+
+@test "every ssh example offering a key also restricts ssh to it" {
+    # `-i` ADDS a key to the ones offered. With the operator's own key present,
+    # or an agent holding one, ssh authenticates with that instead, no forced
+    # command applies, and a check of the restriction reports it missing when
+    # it is fine. Four examples in the runbook were wrong this way.
+    while IFS= read -r line; do
+        [[ "$line" == *IdentitiesOnly=yes* ]] \
+            || { echo "ssh -i without IdentitiesOnly: $line" >&2; false; }
+    done < <(grep -rh 'ssh .*-i ' "$REPO/docs" "$REPO/upgrades" || true)
+}
+
+@test "the runbook section has an anchor that survives being renumbered" {
+    # Its headings are numbered, so a section inserted above this one renames
+    # it and orphans every link in - including the one in the v5 note and the
+    # one in dejima-guard, which is a different repository and will not be
+    # renumbered along with it.
+    grep -q '<a id="guard-access">' "$REPO/docs/building-a-devbox.md"
+    ! grep -rq 'building-a-devbox.md#7-' "$REPO/docs" "$REPO/upgrades" "$REPO/proxmox"
+}
+
 @test "the sudoers line in the runbook names both permitted invocations" {
     # If it named the program alone it would also permit drift --accept, and
     # the forced command would be the only thing standing in the way.

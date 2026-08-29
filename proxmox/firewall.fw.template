@@ -122,7 +122,7 @@ IN ACCEPT -source __FRONT_DOOR_SUBNET__ -p tcp -dport __FRONT_DOOR_PORT__ -log n
 # What this grants is the ability to attempt SSH, not a shell. The key is
 # restricted in the guest by a forced command and a sudoers rule naming the
 # same two read-only invocations, so a key taken off the guard collects and
-# does nothing else. docs/building-a-devbox.md section 7 has both.
+# does nothing else. docs/building-a-devbox.md, "Let the guard in", has both.
 IN ACCEPT -source __GUARD_IP__ -p tcp -dport 22 -log nolog
 
 # DHCP: omit this and the OUT rule below if the address is static in the guest.
