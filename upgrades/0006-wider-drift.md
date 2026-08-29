@@ -66,6 +66,16 @@ dejima-guard accept
 dejima-guard check      # should be clean
 ```
 
+**Running it in Docker?** There is no `dejima-guard` on that host, so every
+command above takes a prefix:
+
+```sh
+docker compose exec dejima-guard dejima-guard accept
+```
+
+Its own README has the rest, including the form to use when the container is
+not running.
+
 **Read what `accept` is about to record before you run it.** The state is
 larger now and covers places nobody was watching before, so this is the first
 time anything in those paths has been looked at. Take it on a box you believe is
