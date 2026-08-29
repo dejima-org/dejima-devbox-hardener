@@ -31,7 +31,7 @@ you what that bound actually is.
 
 A devbox is a long-lived VM that runs [dejima](https://gitbox.branderson.io/dejima/dejima)
 sessions. Unlike a CI runner it holds uncommitted work, so it cannot be rolled
-back on a schedule — and rollback is the whole containment story of the sister
+back on a schedule, and rollback is the whole containment story of the sister
 project, [dejima-ci-hardener](https://gitbox.branderson.io/dejima/dejima-ci-hardener).
 What replaces it is the hypervisor firewall, plus knowing precisely what sits
 inside it.
@@ -72,7 +72,7 @@ of spec and
 it. If you need separation between people, use a devbox each.
 
 **Container escape is deliberately deprioritised.** An escape gains root, which
-is more than the container has — and root on this VM is already a row in the
+is more than the container has, and root on this VM is already a row in the
 [blast radius table](docs/threat-model.md#blast-radius-by-layer), bounded by the
 same hypervisor firewall however it was reached. So
 [patching is what is left worth doing](docs/threat-model.md#why-container-escape-is-deprioritised),
@@ -114,7 +114,9 @@ root's, whose home on a devbox holds nothing.
 
 ## Updating an existing devbox
 
-**Check what it is at**, from a checkout rather than the installed copy:
+**Check what it is at**, from a checkout rather than the installed copy: an
+installed copy knows only the versions that existed when it was installed, and
+says so rather than reporting "up to date" about one it has never heard of.
 
 ```sh
 git -C ~/dejima-devbox-hardener pull
@@ -122,7 +124,7 @@ cd ~/dejima-devbox-hardener
 ./bin/dejima-devbox-upgrade status
 ```
 
-That names every version this box is missing. **Do them in order** — each note
+That names every version this box is missing. **Do them in order**: each note
 assumes the one before it, and some install what a later one uses.
 
 | | |
@@ -130,19 +132,12 @@ assumes the one before it, and some install what a later one uses.
 | [upgrades/](upgrades/) | One note per version: the console work, the guest work, and what it costs |
 | [docs/upgrading.md](docs/upgrading.md) | The process, and why the two halves are counted separately |
 
-**From a checkout, not the installed copy.** An installed copy knows only the
-versions that existed when it was installed, and says so rather than reporting
-"up to date" about a version it has never heard of.
-
 Nothing here converges on its own, which is why any of this exists. A devbox is
 pinned to the day it was built, half its controls were typed into a console no
 `git pull` reaches, and a snapshot restore can move it backwards without anyone
 deciding to. dejima needs none of it: short-lived containers, tip of `main`
 only, and a pull closes any gap.
 
-```sh
-./bin/dejima-devbox-upgrade status    # run from a checkout, not the installed copy
-```
 ## How it fails
 
 **The firewall is on the hypervisor, so the guest cannot verify it by reading

@@ -255,18 +255,19 @@ stub_audit() {
     done
 }
 
-@test "a note with no guest step does not invoke the tool as if it were installed" {
-    # dejima-devbox-upgrade arrives WITH a version, installed by bootstrap. A
-    # note whose layers do not include 'guest' runs no bootstrap, so on the
-    # machine being upgraded the tool is not on $PATH and will not be put there
-    # by that note - it has to be run from a checkout. Telling an operator
-    # otherwise gives them a command that cannot work on the host it was written
-    # for.
+@test "a note invoking the tool bare runs bootstrap first, which installs it" {
+    # The installed copy carries the notes it was installed with. So a box at
+    # v4 running `sudo dejima-devbox-upgrade mark-node 5` is told there is no
+    # note for v5 - true of that copy, not of this repository.
+    #
+    # THE TEST USED TO ASK ABOUT THE `layers` FIELD, exempting any note
+    # mentioning a guest step. v5 has one - a line in authorized_keys - and
+    # installs nothing, so it was exempted and shipped broken. What matters is
+    # whether bootstrap runs, not whether the guest is touched.
     for f in "$REPO"/upgrades/0*.md; do
-        layers=$(sed -n '/^---$/,/^---$/p' "$f" | sed -n 's/^layers: //p')
-        case " $layers " in *" guest "*) continue ;; esac
-        ! grep -qE '^[[:space:]]*(sudo )?dejima-devbox-upgrade ' "$f" \
-            || { echo "$f: no guest step installs it, so commands must use ./bin/dejima-devbox-upgrade"; false; }
+        grep -qE '^[[:space:]]*sudo (/usr/local/sbin/)?dejima-devbox-upgrade ' "$f" || continue
+        grep -q 'dejima-devbox-bootstrap' "$f" \
+            || { echo "$f: invokes the tool as installed but never installs it - use ./bin/"; false; }
     done
 }
 

@@ -112,7 +112,7 @@ credential.
 
 That file is on the devbox. An escape onto the devbox is exactly the step that
 converts "can use the API while this session lasts" into "holds the token, and
-can keep using it afterwards from anywhere". It is the one credential §7 of the
+can keep using it afterwards from anywhere". It is the one credential §8 of the
 runbook cannot tell you to move off the machine, because the proxy has to read
 it there.
 
@@ -237,7 +237,7 @@ there is one.
   because the proxy that holds it has to read it here. An escape converts "can
   use the API while this session lasts" into "holds the token".
 - **The LAN exceptions.** The forge and the resolver are reachable from this VM
-  on the ports listed, by anything on it — and the ntfy server too, if you use
+  on the ports listed, by anything on it, and the ntfy server too, if you use
   dejima's remote access, which needs a third pinhole for a push that leaves
   the guest. "No LAN access" is not literally true and never was.
 - **Inbound exposure.** The node's inbound list is yours to keep short and
@@ -272,7 +272,7 @@ one that decides it, and its value is measurable: it is worth exactly as much as
 there is on this devbox that the session does not already reach.
 
 On a devbox in spec - one person's work, and
-[§7 of the runbook](building-a-devbox.md#7-keep-the-credentials-off-this-box)
+[§8 of the runbook](building-a-devbox.md#8-keep-the-credentials-off-this-box)
 followed - that set is small but not empty. It holds the working trees of every
 project other than the one the session was launched for, and it holds **the
 model API credential**, which cannot be moved off the box because the host-side

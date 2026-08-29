@@ -347,6 +347,12 @@ install -m 0755 "$SRC/bin/dejima-devbox-audit" "$BIN_DIR/dejima-devbox-audit"
 
 install -m 0755 "$SRC/bin/dejima-devbox-upgrade" "$BIN_DIR/dejima-devbox-upgrade"
 
+# The forced command for dejima-guard's key, installed whether or not a guard
+# exists. It grants nothing on its own - nothing runs it until a key in
+# authorized_keys names it - and having it present means the runbook step is
+# one line in a file rather than "first, write this script".
+install -m 0755 "$SRC/bin/dejima-guard-shell" "$BIN_DIR/dejima-guard-shell"
+
 # Reachability, not just existence.
 #
 # Everything installs to /usr/local/sbin and every instruction in this

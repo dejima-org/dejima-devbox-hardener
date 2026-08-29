@@ -17,13 +17,13 @@ cd ~/dejima-devbox-hardener
 
 `status` from a **checkout** is the authoritative answer. The installed copy at
 `/usr/local/sbin/dejima-devbox-upgrade` only knows the upgrades that existed
-when it was installed, so it cannot tell you about a version released since —
+when it was installed, so it cannot tell you about a version released since,
 and it says so rather than reporting "up to date" about versions it has never
 heard of.
 
 Then, for each outstanding version, in this order:
 
-1. **`dejima-devbox-upgrade show N`** and read it. Node work first — the guest
+1. **`dejima-devbox-upgrade show N`** and read it. Node work first: the guest
    half often installs the check for the node half, and running it against rules
    that do not exist yet produces a `FAIL` that is correct and misleading.
 2. **The console work**, in the Proxmox web UI.
@@ -56,7 +56,7 @@ which is a different and weaker thing. Console rules apply immediately and touch
 nothing in the guest. The guest steps are deliberately live-safe: bootstrap
 installs only what is absent rather than upgrading what is present, because
 `apt-get install docker.io` on a box that already has it will happily take a
-newer version and restart the daemon — killing every running session, from a
+newer version and restart the daemon: killing every running session, from a
 command documented as safe to re-run.
 
 That is the shape to preserve when adding an upgrade. Anything needing the box
@@ -99,7 +99,7 @@ the install was.
 
 **`node_version`** is written by `dejima-devbox-upgrade mark-node`, by you,
 saying you did the console work. Nothing in this guest can read the
-hypervisor's rules — that is what makes those rules the primary control — so it
+hypervisor's rules: that is what makes those rules the primary control, so it
 is an assertion and the tool treats it as one.
 
 They are separate because they are known in different ways, and because their
@@ -127,7 +127,7 @@ Two consequences worth stating plainly:
 - **A check that cannot tell is not a check that failed.** The contract is exit
   `0` for in force, `2` for could-not-determine, anything else for not in force.
   `reach` and `drift` both exit `2` on `INDETERMINATE`, and `mark-node` records
-  the assertion as unverified rather than refusing it — telling an operator
+  the assertion as unverified rather than refusing it: telling an operator
   their console work is missing on the strength of a check that could not see
   would be wrong in the alarming direction.
 - **The command is looked up on `$PATH` first, then beside the tool.** The
@@ -156,7 +156,7 @@ Every one of those sentences is false here:
 | Lifetime | one session | months |
 | Where the controls live | in the image, rebuilt each run | half in the guest, half typed into a console |
 | How a gap closes | `git pull` | a person, deliberately, on two machines |
-| Can it move backwards? | no | yes — a snapshot restore |
+| Can it move backwards? | no | yes: a snapshot restore |
 
 The last row is the one that makes versioning necessary rather than tidy. A
 devbox restored from a snapshot taken before an upgrade boots cleanly, passes
@@ -172,7 +172,7 @@ looks wrong.
    observable from inside the guest. Prefer an existing audit check to a new
    one.
 4. Set `downtime:` honestly. `window` if any step needs the VM stopped or a
-   session interrupted, and say **which** step — an operator who has to guess
+   session interrupted, and say **which** step: an operator who has to guess
    schedules the whole procedure into the window instead of the one part that
    needs it.
 5. Keep the guest steps live-safe where you can. Installing only what is absent,

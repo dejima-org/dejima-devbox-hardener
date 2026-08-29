@@ -26,10 +26,19 @@ setup() {
 
 # Gitea and GitHub both slugify a heading by lowercasing it, dropping anything
 # that is not alphanumeric, space or dash, then turning spaces into dashes.
+#
+# Plus any explicit `<a id="...">`. The runbook's headings are numbered, so a
+# section inserted ahead of one renames every heading after it and orphans
+# every link in. An explicit id is a name that does not move, which is what a
+# link from another repository - or from an upgrade note written months ago -
+# needs to point at.
 anchors_of() {
-    grep -oE '^#+ .*' "$1" \
-        | sed 's/^#* //; s/[^a-zA-Z0-9 -]//g; s/ /-/g' \
-        | tr 'A-Z' 'a-z'
+    {
+        grep -oE '^#+ .*' "$1" \
+            | sed 's/^#* //; s/[^a-zA-Z0-9 -]//g; s/ /-/g' \
+            | tr 'A-Z' 'a-z'
+        grep -oE '<a id="[^"]+"' "$1" | sed 's/<a id="//; s/"$//'
+    }
 }
 
 @test "every relative link points at a file that exists" {

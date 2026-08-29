@@ -9,10 +9,10 @@ hypervisor.
 
 **Already have a devbox?** This page is for building one. To bring an existing
 box forward, start at
-[Updating](../README.md#updating-an-existing-devbox) instead — the upgrade notes
+[Updating](../README.md#updating-an-existing-devbox) instead: the upgrade notes
 name the rules to change rather than having you re-read the table below.
 
-Five steps, and the two pages interleave — follow this order rather than either
+Five steps, and the two pages interleave: follow this order rather than either
 page top to bottom.
 
 | | Do this | Where | Roughly |
@@ -32,7 +32,7 @@ done it before, [the rule table](#build-the-group-once) is the whole of it.
 **The rules go on after the OS is installed, not before.** The Debian installer
 takes its address by DHCP whatever you intend to pin it to afterwards, and a
 lease needs a reply back in. Apply the group first, without the DHCP pair from
-§3, and the installer simply has no network — which presents as a broken mirror
+§3, and the installer simply has no network, which presents as a broken mirror
 or a dead link, not as a firewall you switched on ten minutes earlier. Ticking
 the Firewall checkbox in §2 is safe on its own.
 
@@ -50,7 +50,7 @@ box worth little, plus being able to rebuild it. There is no fourth thing.
 
 **The firewall goes on the node, not in the guest.** Root in the VM can flush
 any rule set it can see. It cannot reach one applied to its own tap device.
-dejima's own controls are not a second copy of this — they bound what a
+dejima's own controls are not a second copy of this: they bound what a
 *session* reaches, and cannot bound what the *VM* reaches, because they run
 inside it.
 
@@ -64,14 +64,14 @@ each layer actually grants.
 ## 1. Check the datacenter firewall is on
 
 **Do this first.** A per-VM firewall with the datacenter switch off is read
-and enforced nowhere, and nothing about that is visible from the VM — it looks
+and enforced nowhere, and nothing about that is visible from the VM: it looks
 exactly like a working setup.
 
 **Datacenter → Firewall → Options → Firewall: `Yes`**
 
 If you have to change it, check that nothing else on the node depended on
 having no firewall. The datacenter default policy is `ACCEPT` in and out, so
-turning it on does not by itself filter anything — but it is worth knowing
+turning it on does not by itself filter anything, but it is worth knowing
 before you flip it rather than after.
 
 ---
@@ -84,13 +84,13 @@ before you flip it rather than after.
 | --- | --- | --- |
 | General | Name | `devbox`, or whatever you prefer |
 | OS | ISO | Debian netinst, current stable |
-| System | Qemu Agent | ✓ — and see the note below, the tick alone does nothing |
+| System | Qemu Agent | ✓, and see the note below, the tick alone does nothing |
 | Disks | Size | 128 GB. A devbox accumulates checkouts, container images and build caches, and it is not rebuilt on a schedule to clear them |
 | CPU | Cores | 4 |
-| CPU | **Type** | **`x86-64-v3` or better — not the default.** See below; the default cannot run at least one of dejima's harnesses, which requires AVX2 capability |
+| CPU | **Type** | **`x86-64-v3` or better, not the default.** See below; the default cannot run at least one of dejima's harnesses, which requires AVX2 capability |
 | Memory | | 16384 MB. dejima builds its image and runs sessions; 8 GB works and is tight |
 | Network | Bridge | your normal bridge |
-| Network | **Firewall** | **✓ — this is the checkbox everything else depends on** |
+| Network | **Firewall** | **✓: this is the checkbox everything else depends on** |
 
 The Firewall checkbox is easy to miss and easy to uncheck later without
 noticing. If it is off, the per-VM rules do not apply to the interface and the
@@ -126,7 +126,7 @@ Three ways to get this wrong:
   inside the guest keeps the same QEMU process and therefore the same CPU
   model, which presents as the setting not having taken.
 
-Worth checking rather than assuming, once the guest is up — and worth running
+Worth checking rather than assuming, once the guest is up, and worth running
 on any devbox built before this section existed, since the alternative is
 discovering it as a crash with no output:
 
@@ -136,7 +136,7 @@ grep -qw avx2 /proc/cpuinfo && echo "  avx2 present" || echo "  NO AVX2 - fix th
 
 **What a moving address does *not* break.** Not the firewall. Every rule in the
 next section keys on a *destination*, except the two inbound rules, which key
-on *your* client subnets — and Proxmox applies the whole set to this VM's tap
+on *your* client subnets, and Proxmox applies the whole set to this VM's tap
 device, identified by VMID rather than by IP. Nothing anywhere names this VM by
 its own address, so a rebuilt VM that comes up on a different one is still
 fully firewalled.
@@ -169,14 +169,7 @@ Twelve rules, built once as a **security group** and applied to each devbox.
 Build the group even with one VM: hand-entered copies are two chances to get the
 ordering wrong, and one of them to drift later.
 
-**This is the primary control.** Everything else in this repository exists to
-verify it or explain it.
-
-Twelve rules, built once as a **security group** and applied to each devbox.
-Build the group even with one VM: hand-entered copies are two chances to get the
-ordering wrong, and one of them to drift later.
-
-The outbound half does the work and stays fixed — six DROPs covering every
+The outbound half does the work and stays fixed: six DROPs covering every
 address a neighbour can hold, with exceptions above them for the two hosts this
 VM genuinely needs. A third joins them if you want dejima's notifications, and
 it is the one to be careful with: see [One more, if you want dejima's
@@ -198,16 +191,16 @@ offers services you want to reach; keep it legible rather than short.
 | 4 | out | ACCEPT | tcp | 22 | **Dest:** forge IP | Push over SSH |
 | 5 | out | ACCEPT | udp | 53 | **Dest:** nameserver IP | The forge's name is internal |
 | 6 | out | ACCEPT | tcp | 53 | **Dest:** nameserver IP | Same, over TCP |
-| 7 | out | DROP | — | — | **Dest:** `10.0.0.0/8` | |
-| 8 | out | DROP | — | — | **Dest:** `172.16.0.0/12` | |
-| 9 | out | DROP | — | — | **Dest:** `192.168.0.0/16` | The three that matter |
-| 10 | out | DROP | — | — | **Dest:** `169.254.0.0/16` | Link-local, incl. metadata services |
-| 11 | out | DROP | — | — | **Dest:** `100.64.0.0/10` | Carrier-grade NAT, where a tailnet lives |
-| 12 | out | DROP | — | — | **Dest:** `::/0` | IPv6, the whole family |
+| 7 | out | DROP | - | - | **Dest:** `10.0.0.0/8` | |
+| 8 | out | DROP | - | - | **Dest:** `172.16.0.0/12` | |
+| 9 | out | DROP | - | - | **Dest:** `192.168.0.0/16` | The three that matter |
+| 10 | out | DROP | - | - | **Dest:** `169.254.0.0/16` | Link-local, incl. metadata services |
+| 11 | out | DROP | - | - | **Dest:** `100.64.0.0/10` | Carrier-grade NAT, where a tailnet lives |
+| 12 | out | DROP | - | - | **Dest:** `::/0` | IPv6, the whole family |
 
 **Set Log level to `info` on rules 7 to 12, and leave it `nolog` everywhere
 else.** A packet matching a DROP is this VM trying to reach your network, which
-on a working devbox is close to never — its forge and resolver have pinholes
+on a working devbox is close to never: its forge and resolver have pinholes
 above, and nothing else it does legitimately goes to a private address. So that
 log is quiet by construction, and a burst in it is the loudest signal a
 compromised devbox produces. It is also written by the hypervisor, about traffic
@@ -236,7 +229,7 @@ forge being down.
 
 **Rule 11 is for a tailnet.** Tailscale numbers its hosts out of
 `100.64.0.0/10`, which is none of the three RFC 1918 ranges, so without this
-rule a devbox on your tailnet reaches every machine you own anywhere — which is
+rule a devbox on your tailnet reaches every machine you own anywhere, which is
 a wider network than the one rules 7 to 9 were drawn around, not a narrower one.
 Add it whether or not you run Tailscale today: it costs nothing on a devbox that
 has no overlay, and the day someone installs one is not a day anyone revisits
@@ -244,14 +237,14 @@ the firewall.
 
 #### Rule 12, and why IPv6 is dropped whole
 
-**IPv6 has no RFC 1918**, so there is no list of private ranges to mirror — the
+**IPv6 has no RFC 1918**, so there is no list of private ranges to mirror: the
 family goes whole instead. Worth having even on a network that routes no IPv6,
 because every Linux host answers on `fe80::` regardless. The argument is in
 [the threat model](../docs/threat-model.md#the-lan-boundary-is-two-boundaries)
 and again above `OUT DROP -dest ::/0` in
 [firewall.fw.template](firewall.fw.template).
 
-**Do it here, not with `disable_ipv6` in the guest** — that is a setting root in
+**Do it here, not with `disable_ipv6` in the guest**: that is a setting root in
 the guest can put back.
 
 **If the console rejects `::/0`**, enter four rules in rule 12's position
@@ -269,7 +262,7 @@ takes the smaller source range. Argued in full above the inbound rules in
 [firewall.fw.template](firewall.fw.template).
 
 Two cheap improvements, since it is the weaker side by construction:
-`limit_req` on that nginx location, and a client certificate — which phones
+`limit_req` on that nginx location, and a client certificate, which phones
 install as a profile and which brings the gate to roughly the strength of an
 SSH key.
 
@@ -293,6 +286,36 @@ it can read the DROPs. It verifies outbound containment by behaviour, which is
 possible from inside. Inbound exposure can only be checked from outside, by
 trying to connect, and this tool does not go looking for things to connect to.
 
+#### One more, if you run dejima-guard elsewhere
+
+[dejima-guard](https://gitbox.branderson.io/dejima/dejima-guard) watches this
+devbox from a machine that is not this devbox. It connects over SSH, so:
+
+| # | Direction | Action | Protocol | Dest. port | Source / Dest | Why |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2b | in | ACCEPT | tcp | 22 | **Source:** the guard's IP | The guard collects over SSH |
+
+**Check whether you need it first.** A guard on the admin subnet is already
+covered by rule 1 and this adds nothing. It is for a guard living somewhere
+else: a container host in another segment, which is where a fleet of them
+tends to be.
+
+**One address, not the subnet it sits on.** The guard is one machine, and
+naming one machine is the point.
+
+**There is no outbound counterpart, and adding one would be a mistake.** The
+guard pulls: it reaches in, and this devbox never reaches out to it. That is
+what lets a guard report on a devbox that has been taken: a box that cannot
+talk to its watcher cannot silence it. A rule added "for symmetry" would give
+that away without looking like it had.
+
+**What it grants is the chance to attempt SSH, not a shell.** The key is
+restricted at the guest end, by a forced command and a sudoers rule that name
+the same two read-only invocations: see
+["Let the guard in" in the guest runbook](../docs/building-a-devbox.md#guard-access).
+The guard is a machine holding the evidence about this one, so it is worth
+assuming somebody will eventually want it.
+
 #### Two more, if the VM gets its address by DHCP
 
 Skip both if you pinned the address in the guest with `dejima-devbox-static-ip`.
@@ -301,8 +324,8 @@ router: reserved or not, the guest still speaks DHCP.
 
 | # | Direction | Action | Protocol | Dest. port | Source / Dest | Why |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2a | in | ACCEPT | udp | 68 | — | Let the lease reply back in |
-| 6a | out | ACCEPT | udp | 67 | — | Let the lease request out |
+| 2a | in | ACCEPT | udp | 68 | - | Let the lease reply back in |
+| 6a | out | ACCEPT | udp | 67 | - | Let the lease request out |
 
 Place `2a` with the other inbound rules and `6a` above the DROPs, as the
 numbering suggests. Both name a port and no host, which makes them narrower
@@ -317,7 +340,7 @@ lease complete.
 
 Do not count on rebinding to save you. At T2 the client stops unicasting and
 broadcasts to `255.255.255.255`, which none of the DROPs match, so the request
-does leave without rule `6a` — but the reply still needs `2a`. Half a working
+does leave without rule `6a`, but the reply still needs `2a`. Half a working
 path renews nothing.
 
 This failure is slow and does not look like a firewall. Nothing breaks at
@@ -499,8 +522,8 @@ devbox later is the same single step, and the order cannot drift between hosts.
 
 #### The ordering trap
 
-**Rules are evaluated top to bottom and the first match wins.** Your pinholes —
-rules 3 to 6, plus 6b if you added it — name addresses *inside* the ranges
+**Rules are evaluated top to bottom and the first match wins.** Your pinholes:
+rules 3 to 6, plus 6b if you added it: name addresses *inside* the ranges
 rules 7 to 12 drop. A pinhole below its DROP is dead, and the VM cannot reach
 its forge or resolve anything.
 
@@ -511,7 +534,7 @@ to produce it.
 
 Two ways through. **Drag each rule to the bottom as you add it**, which keeps
 the list matching the table at every step and is the easier to check. Or enter
-them bottom-up and let the insertions stack into order — quicker, and you are
+them bottom-up and let the insertions stack into order: quicker, and you are
 reading the table backwards while doing it.
 
 Either way, **read the finished list top to bottom against the table** before
@@ -540,7 +563,7 @@ memory.
 | Rule 2's source | The subnets a phone is on | your own devices |
 | Rule `6b`'s destination and port | A listener serving **only** ntfy | `ss -lntp` on the proxy, and the probes above |
 | The forge's hostname | `forge_host` in `/etc/dejima-devbox/config` | `dejima-devbox-bootstrap` asks and writes it |
-| Rule 6b's destination **and port** | `ntfy_url`, `[remote-access]` in `~/.config/dejima/config` | `getent hosts <its hostname>` on the VM, and the port out of the URL — not assumed to be 443 |
+| Rule 6b's destination **and port** | `ntfy_url`, `[remote-access]` in `~/.config/dejima/config` | `getent hosts <its hostname>` on the VM, and the port out of the URL, not assumed to be 443 |
 
 **Rules 5–6 want the nameserver, not the gateway.** They are the same address
 on plenty of networks, which is exactly what makes this worth saying: using
@@ -556,8 +579,8 @@ Point rules 3–4 at one address and `forge_host` at a name that resolves
 elsewhere and the audit reports INDETERMINATE, which is correct but unhelpful.
 
 **Nothing checks rule 6b**, and that is worth knowing rather than discovering.
-`dejima-devbox-audit` verifies containment — that things which should be
-unreachable are — and a missing pinhole is the opposite shape: something that
+`dejima-devbox-audit` verifies containment: that things which should be
+unreachable are, and a missing pinhole is the opposite shape: something that
 should be reachable and is not. The audit passes either way. The only symptom
 is a phone that stops buzzing, which looks like dejima being broken rather than
 like a firewall rule, so check this one by sending a notification and watching
@@ -597,10 +620,10 @@ IPv4 address.
 
 | What you see | What it means |
 | --- | --- |
-| No `tap<vmid>i0` chains at all | The firewall is not applied to this VM. The NIC's Firewall checkbox, the VM's Firewall option, or the datacenter switch — check all three, in that order |
+| No `tap<vmid>i0` chains at all | The firewall is not applied to this VM. The NIC's Firewall checkbox, the VM's Firewall option, or the datacenter switch: check all three, in that order |
 | Chains exist but hold none of your rules | The rules are on a different VM id, or were added at datacenter or node level rather than to this VM |
 | A LAN DROP above a pinhole ACCEPT | The ordering trap. The VM will not reach the forge or resolve anything; drag the pinholes above the DROPs |
-| Rules present and correct, DNS still failing | The address in rules 5–6 is not the VM's nameserver. The gateway is the usual wrong answer — see "Values that must agree" |
+| Rules present and correct, DNS still failing | The address in rules 5–6 is not the VM's nameserver. The gateway is the usual wrong answer: see "Values that must agree" |
 | v4 chain right, `ip6tables -S` empty | Rule 12 was not entered, or the console rejected `::/0` and the error was missed. Nothing about the v4 half will look wrong |
 
 `pve-firewall status` reports the datacenter switch, not these rules.
@@ -627,7 +650,7 @@ sudo ping -6 -n -c 2 -W 1 -I "$dev" ff02::1
 ```
 
 Nothing needs installing: `bash` opens TCP connections itself, `getent` is part
-of libc, and `ping` ships with Debian — which matters on a machine you have not
+of libc, and `ping` ships with Debian, which matters on a machine you have not
 finished setting up yet.
 
 **The last one asks the whole LAN who is there, over IPv6.** Any reply from an
@@ -738,7 +761,7 @@ to the group is the one that gets forgotten.
 
 A script that runs `qm create` and writes into `/etc/pve/firewall/` is exactly
 the kind of artifact people paste into a root shell without reading, and the
-blast radius is the whole node — including every VM on it that has nothing to do
+blast radius is the whole node: including every VM on it that has nothing to do
 with this one. So nothing here asks you to edit a file on the node: where a
 console path and a file path both exist, this runbook takes the console path
 even when the file would be tidier, because a hand-edited file cannot be checked

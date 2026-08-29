@@ -6,7 +6,7 @@ downtime: none
 snapshot: none
 ---
 
-# v3 — a pinhole for dejima's remote-access notifications
+# v3: a pinhole for dejima's remote-access notifications
 
 **Only if you use dejima's remote access.** If you do not, there is nothing to
 do and you can record this version and move on.
@@ -16,7 +16,7 @@ One optional rule in the console. No guest change, no new snapshot.
 ## Why
 
 `dejima-notify-watch` is a systemd *user* unit on the devbox, so its push to
-ntfy crosses your LAN — and a self-hosted ntfy is a private address, which rules
+ntfy crosses your LAN, and a self-hosted ntfy is a private address, which rules
 7 to 9 drop.
 
 So remote access is configured, enabled, and **silently sends nothing**: no
@@ -27,14 +27,14 @@ A gap in what this project documented, not a change of position.
 
 ## If you already added it by hand
 
-Likely, if you use the feature — it is the obvious fix once you work out what is
+Likely, if you use the feature: it is the obvious fix once you work out what is
 wrong, and it is the reason this note exists.
 
 Check what you added against the spec rather than assuming they match:
 
 | | Should be |
 | --- | --- |
-| Destination | One host — whatever `ntfy_url` resolves to. Not a subnet |
+| Destination | One host: whatever `ntfy_url` resolves to. Not a subnet |
 | Protocol / port | `tcp`, and the port your deployment actually serves. Do not assume 443 |
 | Position | Above the DROPs, with the other pinholes |
 | Direction | `out` only. Nothing needs to reach *in* for this |
@@ -50,7 +50,7 @@ Three things worth re-checking, because they pass day-to-day and cost you later:
   compromised devbox your entire LAN, which is the thing this project exists to
   prevent. It is the shortcut most likely to have been taken at 1am.
 - **A port shared with other services on the same proxy** reaches all of them,
-  not just ntfy. See below — this is the one most likely to be wider than
+  not just ntfy. See below: this is the one most likely to be wider than
   intended without looking wider, and the one worth fixing even if the rule is
   otherwise correct.
 
@@ -67,13 +67,13 @@ address, internet egress from this VM is already unbounded and the rule is
 redundant. It is needed when the name resolves to a private address.
 
 Place it with the other pinholes, **above** the DROPs. The console inserts at
-the top, so it will land above them on its own — but drag it into place with the
+the top, so it will land above them on its own, but drag it into place with the
 other ACCEPTs rather than leaving it first, so the group still reads in the
 order the table documents.
 
 The destination and port must match `ntfy_url`, under `[remote-access]` in
 `~/.config/dejima/config` on the devbox. Read both off the machine rather than
-recalling them — the port in particular, since a reverse proxy often serves
+recalling them: the port in particular, since a reverse proxy often serves
 something other than 443:
 
 ```sh
@@ -88,7 +88,7 @@ getent hosts "${hostport%%:*}"        # the address the rule needs
 Worth reading even if you already added the rule.
 
 The rule matches an address and a port; a reverse proxy routes by hostname. So
-if ntfy shares a port with other services, **the rule reaches all of them** — a
+if ntfy shares a port with other services, **the rule reaches all of them**: a
 compromised devbox chooses its own `Host` header and the firewall cannot tell.
 The exposure then grows silently whenever a route is added there for some
 unrelated reason.
@@ -110,8 +110,8 @@ noticed, which is worse.
 
 ## Check it
 
-There is nothing to run. `dejima-devbox-audit` verifies **containment** — that
-what should be unreachable is — and a missing pinhole is the opposite shape.
+There is nothing to run. `dejima-devbox-audit` verifies **containment**: that
+what should be unreachable is, and a missing pinhole is the opposite shape.
 The audit passes with or without this rule, which is why it declares no
 `verify-node` command.
 

@@ -102,6 +102,29 @@ log_level_out: nolog
 IN ACCEPT -source __ADMIN_SUBNET__ -p tcp -dport 22 -log nolog
 IN ACCEPT -source __FRONT_DOOR_SUBNET__ -p tcp -dport __FRONT_DOOR_PORT__ -log nolog
 
+# OPTIONAL, and only if you run dejima-guard somewhere the two rules above do
+# not already cover. Omit it otherwise.
+#
+# CHECK WHETHER YOU NEED IT FIRST. The guard connects over SSH, so a guard on
+# the admin subnet is already permitted by the first rule and this line adds
+# nothing. It is for a guard living somewhere else - a container host in a
+# different segment, most likely, which is where a fleet of them tends to be.
+#
+# ONE ADDRESS, not the subnet it sits on. The guard is one machine, and the
+# whole point of naming it here is that it is one machine.
+#
+# There is NO OUTBOUND COUNTERPART and there should not be. The guard pulls:
+# it reaches in, the devbox never reaches out to it. That is what makes a guard
+# on a compromised devbox still able to report - a box that cannot talk to its
+# watcher cannot silence it - and adding an outbound rule "for symmetry" would
+# quietly give away the property the design is built on.
+#
+# What this grants is the ability to attempt SSH, not a shell. The key is
+# restricted in the guest by a forced command and a sudoers rule naming the
+# same two read-only invocations, so a key taken off the guard collects and
+# does nothing else. docs/building-a-devbox.md, "Let the guard in", has both.
+IN ACCEPT -source __GUARD_IP__ -p tcp -dport 22 -log nolog
+
 # DHCP: omit this and the OUT rule below if the address is static in the guest.
 #
 # The reply to a lease request arrives from the server's own address to this
