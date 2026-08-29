@@ -1,17 +1,12 @@
 # Runs the bats suite on every pull request and on every push to one.
-# `pull_request` fires on opened/reopened/synchronize, and synchronize is the
-# push-to-an-open-PR event, so both are covered without listing types.
+# `pull_request_target` defaults to opened, reopened and synchronize, and
+# synchronize is the push-to-an-open-PR event, so both are covered without
+# listing types. Why that event rather than `pull_request` is the next comment
+# down, and it is the whole security posture of this file.
 #
-# Split by what each half NEEDS. `bats test/` runs anywhere a shell does - it
-# stubs curl, dnsmasq and docker, on purpose, because the properties worth
-# checking are in what these programs decide rather than in what the system
-# does afterwards. The compose job needs a real Docker daemon and a real
-# compose plugin, because the thing it checks is precisely what a stub cannot:
-# whether what dejima-ci-runners emits is a compose file Docker will accept.
-#
-# Both jobs name the same runner anyway. Only one label is registered for this
-# repository, and a job that "runs anywhere" is a statement about what it needs
-# rather than about what it should be handed.
+# Two jobs, split by what a red one tells you: `tests` checks the branch,
+# `runner-env` checks the machine it was handed. Each says why at its own
+# definition.
 name: tests
 
 # `pull_request_target`, not `pull_request`, and the difference is the whole
@@ -28,10 +23,10 @@ name: tests
 # What runs here, and where, is whatever `main` says.
 #
 # The cost is that the run's ref is the base branch, so a bare checkout gets
-# `main`. Jobs that test the change name the head explicitly; the two
-# runner-env jobs deliberately do not, because they assert on the RUNNER rather
-# than on the change, and their assertions should come from `main` where a
-# branch can neither weaken nor delete them.
+# `main`. The job that tests the change names the head explicitly; runner-env
+# deliberately does not, because it asserts on the RUNNER rather than on the
+# change, and those assertions should come from `main` where a branch can
+# neither weaken nor delete them.
 #
 # This does NOT make the repository safe on its own. A branch can still add a
 # workflow of its own with `on: pull_request`, and that runs from the head with
