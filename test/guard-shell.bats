@@ -165,3 +165,15 @@ run_shell() { SSH_ORIGINAL_COMMAND="$1" AUDIT="$STUB/audit" PATH="$STUB:$PATH" r
             || { echo "$f puts check before accept"; false; }
     done < <(cd "$REPO" && git ls-files '*.md' | sed "s|^|$REPO/|")
 }
+
+@test "a note running the guard says what that looks like in a container" {
+    # The bare command name is the host path. dejima-guard is usually a
+    # container, and on that host there is no dejima-guard at all - or worse,
+    # one from a second deployment with its own baseline. An operator following
+    # the note gets command-not-found on the step meant to confirm the upgrade.
+    for f in "$REPO"/upgrades/0*.md; do
+        grep -qE '^dejima-guard (accept|check|trust-host)' "$f" || continue
+        grep -q 'docker compose exec dejima-guard' "$f" \
+            || { echo "$f runs the guard without naming the container form"; false; }
+    done
+}

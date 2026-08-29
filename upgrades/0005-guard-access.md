@@ -89,6 +89,16 @@ dejima-guard accept        # take the baseline, deliberately
 dejima-guard check         # should now be clean
 ```
 
+**Running it in Docker?** There is no `dejima-guard` on that host, so every
+command above takes a prefix:
+
+```sh
+docker compose exec dejima-guard dejima-guard accept
+```
+
+Its own README has the rest, including the form to use when the container is
+not running.
+
 **`accept` before `check`, and not the other way round.** A guard with no
 baseline refuses to check rather than quietly recording whatever it finds, so a
 `check` run first reports a failure that is not one. Take the baseline while you
