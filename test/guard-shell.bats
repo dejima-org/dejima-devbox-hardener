@@ -146,3 +146,22 @@ run_shell() { SSH_ORIGINAL_COMMAND="$1" AUDIT="$STUB/audit" PATH="$STUB:$PATH" r
     [[ "$line" == *"dejima-devbox-audit drift --state"* ]]
     [[ "$line" != *"NOPASSWD: /usr/local/sbin/dejima-devbox-audit,"* ]]
 }
+
+@test "a note telling you to run the guard's check also tells you to accept first" {
+    # A guard with no baseline refuses to check rather than recording whatever
+    # it finds. So a note that says "run check and watch it succeed" reports a
+    # failure that is not one, on a step whose whole purpose is confirming the
+    # upgrade worked.
+    #
+    # Cross-repository, and nothing here can see the guard's code. What this
+    # holds is that the two commands are named in the right order, which is the
+    # part that goes stale silently when the other project changes.
+    while IFS= read -r f; do
+        grep -q 'dejima-guard check' "$f" || continue
+        grep -q 'dejima-guard accept' "$f" \
+            || { echo "$f runs the guard's check without accepting a baseline first"; false; }
+        [ "$(grep -n 'dejima-guard accept' "$f" | head -1 | cut -d: -f1)" \
+          -lt "$(grep -n 'dejima-guard check' "$f" | head -1 | cut -d: -f1)" ] \
+            || { echo "$f puts check before accept"; false; }
+    done < <(cd "$REPO" && git ls-files '*.md' | sed "s|^|$REPO/|")
+}

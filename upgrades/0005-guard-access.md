@@ -80,8 +80,20 @@ sudo ./bin/dejima-devbox-upgrade mark-node 5
 ```
 
 v5 declares no check. Nothing in the guest can see a firewall rule on the node,
-and whether the guard can actually connect is a question the guard answers:
-run `dejima-guard check` on that machine and watch it succeed.
+and whether the guard can actually connect is a question only the guard answers.
+On that machine:
+
+```sh
+dejima-guard trust-host    # record this devbox's host key, once
+dejima-guard accept        # take the baseline, deliberately
+dejima-guard check         # should now be clean
+```
+
+**`accept` before `check`, and not the other way round.** A guard with no
+baseline refuses to check rather than quietly recording whatever it finds, so a
+`check` run first reports a failure that is not one. Take the baseline while you
+still believe this box is clean; one taken later records whatever is on it as
+normal.
 
 ## 4. Snapshot
 

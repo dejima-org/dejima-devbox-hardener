@@ -244,8 +244,12 @@ root password to fall back on.
 with your own credentials, and installs the guard's key rather than using it:
 
 ```sh
-dejima-guard-install-key you@devbox
+sudo -u dejima-guard dejima-guard-install-key you@devbox
 ```
+
+As the guard's own account, because that is who owns the key it installs and who
+has to be able to read it afterwards. The guard's README is authoritative for
+that machine.
 
 That writes the restricted line in a single append and then proves the
 restriction: two commands that must work, two that must come back `refused`.
