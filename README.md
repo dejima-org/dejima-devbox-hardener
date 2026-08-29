@@ -38,6 +38,9 @@ inside it.
 
 **It does not prevent root on the devbox.** Nothing here tries to. It makes root
 reach less, and makes that reach something you can check rather than assume.
+What notices if it happens is
+[dejima-guard](https://gitbox.branderson.io/dejima/dejima-guard), which is
+optional and lives on another machine.
 
 | | |
 | --- | --- |
@@ -176,6 +179,25 @@ map of valuable targets, kept on the machine this project assumes will be owned.
 The audit derives its targets from the routing table and its controls from your
 forge, so there is nothing to type and nothing to leak.
 
+## Nothing here is watching
+
+Every check on this page runs on the box it is checking, when you run it. Root
+on that box can lie to all of them, and the baseline `drift` compares against
+lives on the machine whose drift it is describing. The audit bounds an intruder
+who did not think to look. It has nothing to say about one who did, and nothing
+at all to say at three in the morning.
+
+[dejima-guard](https://gitbox.branderson.io/dejima/dejima-guard) is the other
+half, and it is a separate machine on purpose. It reaches in over SSH on a
+cadence, keeps the baseline on its own disk where root here cannot reach it, and
+alerts from there. The inversion is the point: a devbox that has been taken
+cannot silence a watcher it cannot talk to, and a collection that stops arriving
+is itself the alarm.
+
+It needs nothing new from this box beyond [v5](upgrades/0005-guard-access.md): a
+restricted key that can run two read-only commands and nothing else, and one
+inbound firewall rule if the guard does not already sit on your admin subnet.
+
 ## Tests
 
 ```sh
@@ -196,6 +218,7 @@ nothing is worse than one that fails.
 | [docs/reference.md](docs/reference.md) | The three verdicts, the three addressing modes, the one config key |
 | [SECURITY.md](SECURITY.md) | What this claims, and where to report a vulnerability |
 | [dejima-ci-hardener](https://gitbox.branderson.io/dejima/dejima-ci-hardener) | The sister project, for hosts that *can* be rolled back |
+| [dejima-guard](https://gitbox.branderson.io/dejima/dejima-guard) | Watches a devbox from a machine that is not the devbox, and alerts on what changed |
 
 ## License
 
