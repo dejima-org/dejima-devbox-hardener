@@ -169,13 +169,6 @@ Twelve rules, built once as a **security group** and applied to each devbox.
 Build the group even with one VM: hand-entered copies are two chances to get the
 ordering wrong, and one of them to drift later.
 
-**This is the primary control.** Everything else in this repository exists to
-verify it or explain it.
-
-Twelve rules, built once as a **security group** and applied to each devbox.
-Build the group even with one VM: hand-entered copies are two chances to get the
-ordering wrong, and one of them to drift later.
-
 The outbound half does the work and stays fixed — six DROPs covering every
 address a neighbour can hold, with exceptions above them for the two hosts this
 VM genuinely needs. A third joins them if you want dejima's notifications, and

@@ -638,7 +638,7 @@ drift_state() {
         [ -e "$p" ] || continue
         find "$p" -type f -print0 2>>"$DRIFT_ERRS" \
             | xargs -0 -r sha256sum 2>>"$DRIFT_ERRS" \
-            | sed 's/^\([0-9a-f]\{64\}\)  /FILE \1  /' || true
+            | sed 's/^\\\{0,1\}\([0-9a-f]\{64\}\)  /FILE \1  /' || true
     done < <(drift_paths)
 
     if command -v systemctl >/dev/null 2>&1; then

@@ -165,6 +165,25 @@ stub_state() {
     [[ "$output" == *"FILE "*"$scratch/a"* ]]
 }
 
+@test "a filename holding a backslash or a newline is still tagged FILE" {
+    # sha256sum escapes those two: it prefixes the line with a backslash and
+    # rewrites the name. That broke the tag, so the line went out untagged -
+    # and the watcher counts changes by their tag, so a file with such a name
+    # could change without appearing in the count the alert carries.
+    #
+    # A filename is attacker-chosen on a box under suspicion, which makes this
+    # a gap somebody could pick rather than one they would have to stumble into.
+    scratch="$BATS_TEST_TMPDIR/odd"
+    mkdir -p "$scratch"
+    printf 'x' > "$scratch/back\slash"
+    printf 'y' > "$(printf '%s/new\nline' "$scratch")"
+    drift_paths() { printf '%s\n' "$scratch"; }
+    DRIFT_ERRS="$BATS_TEST_TMPDIR/errs"; : > "$DRIFT_ERRS"
+    run drift_state
+    [ "$(printf '%s\n' "$output" | grep -c '^FILE ')" -eq 2 ]
+    [[ "$output" != *$'\n'[0-9a-f][0-9a-f]* ]]
+}
+
 @test "drift_state records what it could not read rather than dropping it" {
     scratch="$BATS_TEST_TMPDIR/locked"
     mkdir -p "$scratch/private"

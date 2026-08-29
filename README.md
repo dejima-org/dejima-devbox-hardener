@@ -114,7 +114,9 @@ root's, whose home on a devbox holds nothing.
 
 ## Updating an existing devbox
 
-**Check what it is at**, from a checkout rather than the installed copy:
+**Check what it is at**, from a checkout rather than the installed copy — an
+installed copy knows only the versions that existed when it was installed, and
+says so rather than reporting "up to date" about one it has never heard of.
 
 ```sh
 git -C ~/dejima-devbox-hardener pull
@@ -130,19 +132,12 @@ assumes the one before it, and some install what a later one uses.
 | [upgrades/](upgrades/) | One note per version: the console work, the guest work, and what it costs |
 | [docs/upgrading.md](docs/upgrading.md) | The process, and why the two halves are counted separately |
 
-**From a checkout, not the installed copy.** An installed copy knows only the
-versions that existed when it was installed, and says so rather than reporting
-"up to date" about a version it has never heard of.
-
 Nothing here converges on its own, which is why any of this exists. A devbox is
 pinned to the day it was built, half its controls were typed into a console no
 `git pull` reaches, and a snapshot restore can move it backwards without anyone
 deciding to. dejima needs none of it: short-lived containers, tip of `main`
 only, and a pull closes any gap.
 
-```sh
-./bin/dejima-devbox-upgrade status    # run from a checkout, not the installed copy
-```
 ## How it fails
 
 **The firewall is on the hypervisor, so the guest cannot verify it by reading
