@@ -43,11 +43,15 @@ looking in fewer places.
 cd ~/dejima-devbox-hardener
 git pull
 sudo ./bin/dejima-devbox-bootstrap
-sudo ./bin/dejima-devbox-upgrade mark-guest 6
 ```
 
 Live-safe. Bootstrap installs only what is missing and does not restart Docker,
 so sessions in flight are not disturbed.
+
+**Nothing to mark.** Bootstrap records the guest version itself, because that is
+the half a box can know about itself. `mark-node` exists for the other half, the
+console work no guest can see, and this upgrade has none. Afterwards
+`./bin/dejima-devbox-upgrade status` should read v6.
 
 ## 2. Re-accept the baseline, on the guard
 

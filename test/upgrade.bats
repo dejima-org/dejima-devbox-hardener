@@ -301,3 +301,20 @@ stub_audit() {
     newest_note=$(ls "$REPO"/upgrades/0*.md | sed -n 's/.*\/0*\([0-9][0-9]*\)-.*/\1/p' | sort -n | tail -1)
     [ "$newest_note" = "$(tr -d '[:space:]' < "$REPO/VERSION")" ]
 }
+
+@test "every upgrade subcommand a note tells you to run is one the tool has" {
+    # A note is a procedure somebody follows verbatim on a machine they are
+    # partway through changing. v6 shipped telling them to run `mark-guest`,
+    # which has never existed: bootstrap records the guest version itself,
+    # because that is the half a box can know about itself, and mark-node is for
+    # the half it cannot see.
+    known=$(sed -n '/case "\$cmd" in/,/esac/p' "$REPO/bin/dejima-devbox-upgrade" \
+            | sed -n 's/^[[:space:]]*\([a-z][a-z-]*\)).*/\1/p')
+    [ -n "$known" ]
+    for f in "$REPO"/upgrades/0*.md; do
+        while IFS= read -r sub; do
+            printf '%s\n' "$known" | grep -qx -- "$sub" \
+                || { echo "$f runs 'dejima-devbox-upgrade $sub', which the tool does not have"; false; }
+        done < <(grep -oE 'dejima-devbox-upgrade [a-z-]+' "$f" | awk '{print $2}' | sort -u)
+    done
+}
