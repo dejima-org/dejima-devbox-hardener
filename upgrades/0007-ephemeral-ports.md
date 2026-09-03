@@ -60,9 +60,19 @@ differs from every state taken after this.
 On the machine running dejima-guard:
 
 ```sh
-docker compose exec dejima-guard dejima-guard accept
-docker compose exec dejima-guard dejima-guard check
+dejima-guard accept
+dejima-guard check      # should be clean
 ```
 
-Without a container, drop the prefix. If you do not run a guard,
-`sudo dejima-devbox-audit drift --accept` does the same on the box itself.
+**Running it in Docker?** There is no `dejima-guard` on that host, so every
+command above takes a prefix:
+
+```sh
+docker compose exec dejima-guard dejima-guard accept
+```
+
+Its own README has the rest, including the form to use when the container is
+not running.
+
+If you do not run a guard at all, `sudo dejima-devbox-audit drift --accept` does
+the same thing on the box itself.
