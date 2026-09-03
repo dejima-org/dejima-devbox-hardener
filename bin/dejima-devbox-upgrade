@@ -189,6 +189,36 @@ cmd_status() {
     say "== Version =="
     say ""
 
+    # UNREADABLE IS NOT ABSENT, and the two used to give the same answer.
+    #
+    # The state file is 0640 root, so `status` run without sudo cannot read it
+    # on a host that is fully tracked - and it reported that the host predates
+    # version tracking, then sent the operator to the baseline note to establish
+    # where they "actually are". Advice to redo the tracking of a host that is
+    # tracked, produced by a check that had not looked.
+    #
+    # A directory that is not searchable hides the file from -e as well, so that
+    # is named separately: it is the same answer with a different fix.
+    if [ ! -r "$STATE" ] && [ -e "$STATE" ]; then
+        say "  $STATE exists but $(id -un) cannot read it"
+        say "  (mode $(stat -c %a "$STATE" 2>/dev/null || echo '?'), owned by $(stat -c %U "$STATE" 2>/dev/null || echo '?'))."
+        say ""
+        say "  Bootstrap writes it 0640 root, so this is the ordinary state of"
+        say "  a tracked host read by an ordinary account. It says nothing about"
+        say "  which version this host is at."
+        say ""
+        say "  Run the same command with sudo."
+        return 2
+    fi
+
+    if [ ! -r "$STATE" ] && [ -d "$CONF_DIR" ] && [ ! -x "$CONF_DIR" ]; then
+        say "  Cannot tell whether $STATE exists: $CONF_DIR is not"
+        say "  searchable by $(id -un), so only its owner can look inside."
+        say ""
+        say "  Run the same command with sudo."
+        return 2
+    fi
+
     if [ ! -r "$STATE" ]; then
         # Not assumed to be v1. A host that is genuinely at v1 and a host whose
         # state file was deleted look identical from here, and choosing the

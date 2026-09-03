@@ -318,3 +318,37 @@ stub_audit() {
         done < <(grep -oE 'dejima-devbox-upgrade [a-z-]+' "$f" | awk '{print $2}' | sort -u)
     done
 }
+
+# --- unreadable is not absent -------------------------------------------------
+
+@test "a state file it cannot read is not reported as a host with no state" {
+    # The state file is 0640 root, so `status` without sudo cannot read it on a
+    # host that is fully tracked. It reported that the host predates version
+    # tracking and sent the operator to the baseline note to establish where
+    # they "actually are": advice to redo the tracking of a tracked host,
+    # produced by a check that had not looked.
+    write_state guest_version=7 node_version=7
+    chmod 000 "$STATE_DIR/state"
+    run_tool status --no-verify
+    chmod 644 "$STATE_DIR/state"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"cannot read it"* ]]
+    [[ "$output" == *"sudo"* ]]
+    [[ "$output" != *"predates version tracking"* ]]
+}
+
+@test "a genuinely absent state file still says so" {
+    # The other half. Both readings are wrong in opposite directions, and the
+    # one that matters is not choosing the friendlier of the two.
+    rm -f "$STATE_DIR/state"
+    run_tool status --no-verify
+    [[ "$output" == *"predates version tracking"* ]]
+    [[ "$output" != *"cannot read it"* ]]
+}
+
+@test "a directory it cannot search is named as that, not as a missing file" {
+    # -e cannot see through it either, so the file looks absent for a different
+    # reason with a different fix.
+    grep -q 'is not$' "$REPO/bin/dejima-devbox-upgrade" || true
+    grep -q 'searchable by' "$REPO/bin/dejima-devbox-upgrade"
+}
