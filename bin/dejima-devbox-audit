@@ -679,7 +679,35 @@ drift_state() {
     # send queue. A flag added without moving the field would have recorded a
     # queue depth as a port, quietly, on every line.
     if command -v ss >/dev/null 2>&1; then
-        ss -H -ltun 2>/dev/null | awk 'NF {print "PORT " $1 " " $5}'
+        # EPHEMERAL PORTS ARE NOT LISTENERS, and including them made this state
+        # differ from itself every few minutes.
+        #
+        # `ss -l` with -u reports UDP sockets in UNCONN, which is what a client
+        # socket looks like: a resolver doing a lookup holds one on a random
+        # high port for as long as the query takes. TCP has the same shape for
+        # anything that binds before connecting. So a box doing nothing produced
+        # a new PORT line every cycle and lost the one from the cycle before,
+        # which a watcher reads as a listener appearing and disappearing - a max
+        # priority alert every half hour on a machine where nothing happened,
+        # and a baseline that cannot be accepted because the next sample differs
+        # again.
+        #
+        # The range comes from the kernel rather than being written down, since
+        # it is tunable and a wrong constant here would either keep the flapping
+        # or hide real services.
+        #
+        # What this gives up: a listener the kernel would also hand out as an
+        # ephemeral port is no longer recorded. That is a real loss, and it is
+        # the better trade - the alternative is an alert every cycle, and an
+        # alert that fires constantly is one nobody reads.
+        local ep_lo ep_hi
+        read -r ep_lo ep_hi < /proc/sys/net/ipv4/ip_local_port_range 2>/dev/null || true
+        : "${ep_lo:=32768}" "${ep_hi:=60999}"
+        ss -H -ltun 2>/dev/null | awk -v lo="$ep_lo" -v hi="$ep_hi" '
+            NF {
+                n = split($5, a, ":"); port = a[n] + 0
+                if (port < lo || port > hi) print "PORT " $1 " " $5
+            }'
     fi
     return 0
 }

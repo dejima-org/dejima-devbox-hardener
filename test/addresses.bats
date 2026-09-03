@@ -43,6 +43,8 @@ setup() {
     allowed=(
         0.0.0.0             # wildcard bind, sshd's ListenAddress
         127.0.0.1           # loopback, as a rejected upstream resolver
+        127.0.0.11          # Docker's embedded resolver, in the drift test that
+                            # shows an ephemeral client socket is not a listener
         127.0.0.53          # systemd-resolved's stub, named as NOT an answer
         255.255.255.255     # limited broadcast, in the DHCP rebind note
         169.254.169.254     # the cloud metadata address, named as a target

@@ -172,8 +172,20 @@ run_shell() { SSH_ORIGINAL_COMMAND="$1" AUDIT="$STUB/audit" PATH="$STUB:$PATH" r
     # one from a second deployment with its own baseline. An operator following
     # the note gets command-not-found on the step meant to confirm the upgrade.
     for f in "$REPO"/upgrades/0*.md; do
-        grep -qE '^dejima-guard (accept|check|trust-host)' "$f" || continue
+        grep -q 'dejima-guard \(accept\|check\|trust-host\)' "$f" || continue
         grep -q 'docker compose exec dejima-guard' "$f" \
             || { echo "$f runs the guard without naming the container form"; false; }
+
+        # BOTH forms, with the bare one first. dejima-guard does not always run
+        # in Docker, and a note giving only the prefixed command tells the
+        # operator of a host install to type something that will not work.
+        # v7 shipped that way, two days after this repository wrote the rule
+        # down in .dejima.md.
+        grep -qE '^dejima-guard (accept|check|trust-host)' "$f" \
+            || { echo "$f gives only the container form"; false; }
+        bare=$(grep -nE '^dejima-guard (accept|check|trust-host)' "$f" | head -1 | cut -d: -f1)
+        pref=$(grep -n 'docker compose exec dejima-guard' "$f" | head -1 | cut -d: -f1)
+        [ "$bare" -lt "$pref" ] \
+            || { echo "$f puts the container form before the plain one"; false; }
     done
 }

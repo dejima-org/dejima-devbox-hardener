@@ -313,3 +313,38 @@ stub_state() {
     [ "$(printf '%s\n' "$output" | grep -cx "$H")" -eq 0 ]
 }
 
+
+@test "an ephemeral port is not recorded as a listener" {
+    # `ss -l` with -u reports UDP sockets in UNCONN, which is what a client
+    # socket looks like: a resolver doing a lookup holds one on a random high
+    # port for as long as the query takes. So a box doing nothing produced a new
+    # PORT line every cycle and lost the one before it, which a watcher reads as
+    # a listener appearing and disappearing.
+    scratch="$BATS_TEST_TMPDIR/e1"; mkdir -p "$scratch"
+    drift_paths() { printf '%s\n' "$scratch"; }
+    DRIFT_ERRS="$BATS_TEST_TMPDIR/errs"; : > "$DRIFT_ERRS"
+    ss() { printf 'udp UNCONN 0 0 127.0.0.11:50267 0.0.0.0:*\nudp UNCONN 0 0 127.0.0.1:53 0.0.0.0:*\ntcp LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\n'; }
+    export -f ss 2>/dev/null || true
+    run drift_state
+    [[ "$output" == *"PORT udp 127.0.0.1:53"* ]]
+    [[ "$output" == *"PORT tcp 0.0.0.0:22"* ]]
+    [[ "$output" != *50267* ]]
+}
+
+@test "the same box twice running gives the same state" {
+    # The property that was lost. Two samples of a machine where nothing
+    # happened have to be identical, or every cycle is a finding.
+    scratch="$BATS_TEST_TMPDIR/e2"; mkdir -p "$scratch"
+    drift_paths() { printf '%s\n' "$scratch"; }
+    DRIFT_ERRS="$BATS_TEST_TMPDIR/errs"; : > "$DRIFT_ERRS"
+    ss() { printf 'udp UNCONN 0 0 127.0.0.11:%s 0.0.0.0:*\nudp UNCONN 0 0 127.0.0.1:53 0.0.0.0:*\n' "$((RANDOM % 20000 + 40000))"; }
+    export -f ss 2>/dev/null || true
+    a=$(drift_state); b=$(drift_state)
+    [ "$a" = "$b" ]
+}
+
+@test "the ephemeral range comes from the kernel, not a constant" {
+    # It is tunable, and a wrong constant would either keep the flapping or hide
+    # real services.
+    grep -q 'ip_local_port_range' "$REPO/bin/dejima-devbox-audit"
+}
