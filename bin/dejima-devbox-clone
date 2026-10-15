@@ -21,7 +21,7 @@
 set -euo pipefail
 
 PROG=${0##*/}
-DEJIMA_URL=${DEJIMA_URL:-https://gitbox.branderson.io/dejima/dejima.git}
+DEJIMA_URL=${DEJIMA_URL:-https://github.com/dejima-org/dejima.git}
 DEJIMA_DIR=${DEJIMA_DIR:-$HOME/dejima}
 
 die() { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }

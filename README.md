@@ -18,9 +18,13 @@
      inline and indents the image by one space. -->
 &nbsp;
 
-&nbsp;<img src="assets/dejima-wordmark-darkmode.png" alt="dejima" height="72">
+&nbsp;<picture><source media="(prefers-color-scheme: dark)" srcset="assets/dejima-wordmark-darkmode.png"><img src="assets/dejima-wordmark-lightmode.png" alt="dejima" height="72"></picture>
 
 ---
+
+> **This is a read-only mirror.** dejima is developed on a private forge,
+> and issues and pull requests are not accepted here. See
+> [CONTRIBUTING.md](https://github.com/dejima-org/dejima/blob/main/CONTRIBUTING.md).
 
 &nbsp;
 
@@ -29,17 +33,17 @@
 Bounds what a compromised development VM can reach on your network, and tells
 you what that bound actually is.
 
-A devbox is a long-lived VM that runs [dejima](https://gitbox.branderson.io/dejima/dejima)
+A devbox is a long-lived VM that runs [dejima](https://github.com/dejima-org/dejima)
 sessions. Unlike a CI runner it holds uncommitted work, so it cannot be rolled
 back on a schedule, and rollback is the whole containment story of the sister
-project, [dejima-ci-hardener](https://gitbox.branderson.io/dejima/dejima-ci-hardener).
+project, [dejima-ci-hardener](https://github.com/dejima-org/dejima-ci-hardener).
 What replaces it is the hypervisor firewall, plus knowing precisely what sits
 inside it.
 
 **It does not prevent root on the devbox.** Nothing here tries to. It makes root
 reach less, and makes that reach something you can check rather than assume.
 What notices if it happens is
-[dejima-guard](https://gitbox.branderson.io/dejima/dejima-guard), which is
+[dejima-guard](https://github.com/dejima-org/dejima-guard), which is
 optional and lives on another machine.
 
 | | |
@@ -51,7 +55,7 @@ optional and lives on another machine.
 
 Do the node side first, through the end of its §3.
 
-[![Developed in dejima](assets/dejima-badge.svg)](https://gitbox.branderson.io/dejima/dejima)
+[![Developed in dejima](assets/dejima-badge.svg)](https://github.com/dejima-org/dejima)
 
 ---
 
@@ -187,7 +191,7 @@ lives on the machine whose drift it is describing. The audit bounds an intruder
 who did not think to look. It has nothing to say about one who did, and nothing
 at all to say at three in the morning.
 
-[dejima-guard](https://gitbox.branderson.io/dejima/dejima-guard) is the other
+[dejima-guard](https://github.com/dejima-org/dejima-guard) is the other
 half, and it is a separate machine on purpose. It reaches in over SSH on a
 cadence, keeps the baseline on its own disk where root here cannot reach it, and
 alerts from there. The inversion is the point: a devbox that has been taken
@@ -217,8 +221,8 @@ nothing is worse than one that fails.
 | [docs/threat-model.md](docs/threat-model.md) | What each layer grants, why escape is deprioritised, what was rejected |
 | [docs/reference.md](docs/reference.md) | The three verdicts, the three addressing modes, the one config key |
 | [SECURITY.md](SECURITY.md) | What this claims, and where to report a vulnerability |
-| [dejima-ci-hardener](https://gitbox.branderson.io/dejima/dejima-ci-hardener) | The sister project, for hosts that *can* be rolled back |
-| [dejima-guard](https://gitbox.branderson.io/dejima/dejima-guard) | Watches a devbox from a machine that is not the devbox, and alerts on what changed |
+| [dejima-ci-hardener](https://github.com/dejima-org/dejima-ci-hardener) | The sister project, for hosts that *can* be rolled back |
+| [dejima-guard](https://github.com/dejima-org/dejima-guard) | Watches a devbox from a machine that is not the devbox, and alerts on what changed |
 
 ## License
 
@@ -227,4 +231,4 @@ GPL-3.0-or-later. See [LICENSE](LICENSE).
 The dejima wordmark and logo are not code and are not covered by that licence.
 They are trademarks; who holds them and what may be done with them is stated
 once for the organisation, at
-[dejima's ATTRIBUTION.md](https://gitbox.branderson.io/dejima/dejima/src/branch/main/ATTRIBUTION.md).
+[dejima's ATTRIBUTION.md](https://github.com/dejima-org/dejima/blob/main/ATTRIBUTION.md).
