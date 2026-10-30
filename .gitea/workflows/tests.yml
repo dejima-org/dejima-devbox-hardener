@@ -1,45 +1,32 @@
 # Runs the bats suite on every pull request and on every push to one.
-# `pull_request_target` defaults to opened, reopened and synchronize, and
+# `pull_request` defaults to opened, reopened and synchronize, and
 # synchronize is the push-to-an-open-PR event, so both are covered without
-# listing types. Why that event rather than `pull_request` is the next comment
-# down, and it is the whole security posture of this file.
+# listing types.
 #
 # Two jobs, split by what a red one tells you: `tests` checks the branch,
 # `runner-env` checks the machine it was handed. Each says why at its own
 # definition.
 name: tests
 
-# `pull_request_target`, not `pull_request`, and the difference is the whole
-# security posture of this file.
+# `pull_request`, so the workflow is read from the head of the pull request
+# and a change to this file is tested by the pull request that makes it.
 #
-# Under `pull_request` the workflow is read from the HEAD of the pull request,
-# so the branch under test decides what runs and, critically, `runs-on:`. A
-# branch can point its jobs at any runner its repository can reach, which makes
-# every control the runner provides opt-out by whoever wrote the branch.
+# This used to be `pull_request_target`, on the reasoning that reading the
+# workflow from the base branch meant a branch could not redirect its own
+# suite. It bought close to nothing: the base is whichever branch the pull
+# request names, and any pushed branch can be one, so a branch carrying its
+# own copy of this file could still choose what ran - with nothing in the
+# pull request's diff to show it, because that diff is head against base.
+# What it did cost was that a pull request could never change its own CI. See
+# https://gitbox.branderson.io/dejima/dejima/issues/384, and dejima/dejima#440
+# for the same move there.
 #
-# Under `pull_request_target` Gitea reads the workflow from the BASE branch and
-# explicitly discards any pull_request_target workflow found on the head
-# commit, so a branch can neither edit this file's copy nor introduce its own.
-# What runs here, and where, is whatever `main` says.
-#
-# The cost is that the run's ref is the base branch, so a bare checkout gets
-# `main`. The job that tests the change names the head explicitly; runner-env
-# deliberately does not, because it asserts on the RUNNER rather than on the
-# change, and those assertions should come from `main` where a branch can
-# neither weaken nor delete them.
-#
-# This does NOT make the repository safe on its own. A branch can still add a
-# workflow of its own with `on: pull_request`, and that runs from the head with
-# whatever `runs-on:` it likes. The only thing stopping that is which runners
-# the repository can reach at all - see the README's "Register scope is the
-# boundary; the label is not". What this buys is that the intended CI is
-# trustworthy, and that escaping it means adding a file rather than editing
-# one.
-#
-# See dejima's docs/ci.md, "Pinning the workflow with pull_request_target":
-# https://gitbox.branderson.io/dejima/dejima/src/branch/main/docs/ci.md
+# So this file is not a boundary, and was not one before. A branch decides
+# what runs here and on which label. What decides what that can reach is
+# which runners the repository can reach at all - see the README's "Register
+# scope is the boundary; the label is not".
 on:
-  pull_request_target:
+  pull_request:
 
 # No `concurrency:` block. Gitea does not implement one - so writing it here
 # would only claim a cancellation that never happens. On a single-capacity
@@ -129,13 +116,7 @@ jobs:
           # sure those two actually run.
           apt-get install -y --no-install-recommends bats python3 python3-yaml ca-certificates
 
-      # The code under test, named explicitly. Under pull_request_target the
-      # run's ref is the base branch, so a bare checkout here would test `main`
-      # on every pull request and pass regardless of the change - green checks
-      # that mean nothing.
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
 
       # As an ordinary user, not root. Kept from the sister repository because
       # the reasoning outlives the test that prompted it: `[ -r ]` is access(2)
@@ -172,18 +153,8 @@ jobs:
     container:
       image: node:20-bookworm
     steps:
-      # No `ref:`, unlike the job above, and that is the whole value of this
-      # one. Under pull_request_target a bare checkout gets the BASE branch, so
-      # these assertions come from main. A branch that could edit the file
-      # asserting it was not handed a Docker socket could assert anything it
-      # liked.
-      #
-      # There is no bootstrapping problem here, which is worth writing down
-      # because there appears to be one. This job cannot run on the pull
-      # request that introduces it: the workflow itself is read from main too,
-      # so until this merges, main defines only the job above and this one does
-      # not exist as far as the run is concerned. By the time it first fires,
-      # main has both the job and the file it runs.
+      # These assert on the RUNNER, and come from the branch like everything
+      # else here. A branch that weakens them does it in its own diff.
       - uses: actions/checkout@v4
 
       - run: |
