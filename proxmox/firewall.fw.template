@@ -181,6 +181,25 @@ OUT ACCEPT -dest __RESOLVER_IP__ -p tcp -dport 53 -log nolog
 # than assume it.
 OUT ACCEPT -dest __NTFY_IP__ -p tcp -dport __NTFY_PORT__ -log nolog
 
+# LOG SHIPPING: omit this line unless `[logging] loki_url` is set. Everything
+# said about the notification rule above applies to this one, including the
+# reverse-proxy problem and the fix for it - a listener serving Loki and
+# nothing else.
+#
+# Loki's own default port is 3100. Behind a proxy it is whatever that proxy
+# listens on, so read it off the config rather than assuming either.
+#
+# Unlike notifications, part of this traffic comes from INSIDE the container:
+# the DNS and connection streams exist only there, while the conversation
+# stream is read on the VM. One rule covers both, because the container's
+# packets leave through the same tap device. dejima permits the Loki host in
+# its own allowlist inside the container; this is the layer it cannot reach.
+#
+# Omitting it is quiet in a particular way: all of dejima's streams stop
+# arriving at once, and a Loki receiving nothing looks exactly like a devbox
+# nobody used.
+OUT ACCEPT -dest __LOKI_IP__ -p tcp -dport __LOKI_PORT__ -log nolog
+
 # DHCP: omit this and the IN rule above if the address is static in the guest.
 #
 # A DHCP server almost always sits inside one of the four ranges dropped
