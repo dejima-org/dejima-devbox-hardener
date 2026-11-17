@@ -70,11 +70,18 @@ Read the destination and port off the machine rather than recalling them:
 ```sh
 url=$(sed -n 's/^loki_url *= *//p' ~/.config/dejima/config)
 hostport=${url#*://}; hostport=${hostport%%/*}
-case "$hostport" in
-  *:*) echo "port: ${hostport##*:}" ;;
-  *)   case "$url" in https://*) echo "port: 443" ;; *) echo "port: 80" ;; esac ;;
-esac
-getent hosts "${hostport%%:*}"        # the address the rule needs
+host=${hostport%%:*}
+port=${hostport##*:}
+# No ":port" in the URL leaves port and host the same string, and the scheme
+# decides it instead.
+if [ "$port" = "$host" ]; then
+    port=80
+    [ "${url#https://}" = "$url" ] || port=443
+fi
+# The URL echoed first: an unset key would otherwise print a confident
+# "port: 80" for a host that is the empty string.
+printf 'url:  %s\nhost: %s\nport: %s\n' "$url" "$host" "$port"
+getent hosts "$host"          # the address the rule needs
 ```
 
 ## Two senders, one rule
