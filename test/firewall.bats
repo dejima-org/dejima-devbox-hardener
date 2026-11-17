@@ -60,6 +60,25 @@ lineno() { grep -nE "$1" "$TPL" | head -1 | cut -d: -f1; }
     [ "$ntfy" -lt "$first_drop" ]
 }
 
+@test "the Loki pinhole is a single host, above the DROPs" {
+    # Optional, and only when [logging] loki_url is set - but the same
+    # reasoning as the ntfy rule above: a subnet here is the whole LAN, and it
+    # looks identical to a working devbox.
+    grep -qE '^OUT ACCEPT -dest __LOKI_IP__ -p tcp -dport __LOKI_PORT__' "$TPL"
+    loki=$(grep -nE '^OUT ACCEPT -dest __LOKI_IP__' "$TPL" | head -1 | cut -d: -f1)
+    first_drop=$(lineno '^OUT DROP')
+    [ "$loki" -lt "$first_drop" ]
+}
+
+@test "the Loki port is a placeholder, not a guess at 3100" {
+    # Loki's own default is 3100 and almost nobody reaches it there: a
+    # self-hosted one is usually behind a proxy on some other port. Writing
+    # either number here would be copied by everyone and right for nobody, and
+    # a pinhole to the wrong port fails the same silent way the missing rule
+    # does - every stream stops at once and nothing says why.
+    ! grep -qE '^OUT ACCEPT -dest __LOKI_IP__ .*-dport [0-9]+' "$TPL"
+}
+
 @test "the ntfy port is a placeholder, not a guess at 443" {
     # A self-hosted ntfy usually sits behind a reverse proxy on some other port.
     # Writing 443 here would be right for nobody in particular and would be

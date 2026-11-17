@@ -497,6 +497,64 @@ Not on the VM directly. This is exactly the exception the [hazards
 section](#two-hazards-no-rule-covers) is about, and the group is the one place
 the whole LAN exposure can be read in one sitting.
 
+#### One more, if you ship logs to Loki
+
+dejima ships every DNS lookup and every outbound connection attempt - allowed
+and refused - to `[logging] loki_url`, plus the session itself if you turned
+conversation logging on. A self-hosted Loki is on your LAN, so rule 7 drops the
+push.
+
+This one fails quietly in a way worth recognising. The push is a `curl` whose
+result is discarded, because a logging endpoint that is down must not be able
+to fail a launch - so **all of dejima's streams stop arriving at once** and
+nothing anywhere says why. A Loki receiving nothing from this VM looks exactly
+like a VM nobody ran anything on.
+
+| # | Direction | Action | Protocol | Dest. port | Source / Dest | Why |
+| --- | --- | --- | --- | --- | --- | --- |
+| 6c | out | ACCEPT | tcp | Loki's port | **Dest:** Loki's IP | Ship logs |
+
+Place it with rules 3–6, above the DROPs.
+
+Loki's own default port is `3100`. Behind a reverse proxy it is whatever that
+proxy listens on, so read it off `~/.config/dejima/config` rather than assuming
+either.
+
+**Everything in the notification section above applies to this rule too** - the
+[reverse-proxy problem](#why-the-obvious-version-of-it-hands-back-the-entire-boundary)
+and [the two shapes that do not have it](#the-two-shapes-that-do-not). A rule
+naming the proxy that fronts Grafana, Loki and everything else grants all of
+them. Give Loki a listener that serves Loki and nothing else, the same way.
+
+##### Two senders, one rule
+
+Not the shape the notification pinhole has, and the difference is worth knowing
+before you reason about what this rule bounds.
+
+The conversation stream is read on the VM, deliberately outside the container so
+that a session cannot silence its own oversight log. The DNS and connection
+streams ship from **inside** the container, because those files only exist
+there.
+
+One rule covers both: the container's packets leave through the VM's tap device
+like everything else, so there is nothing extra to add for the second sender.
+
+What differs is what else bounds it. dejima's own egress allowlist permits the
+Loki host inside the container, and clamps it to that host and port when the
+address is the VM's own - so for that half there is a second, narrower layer.
+The notification pinhole has no equivalent, which is why its section says the
+width of rule `6b` is the entire answer and this section does not. The
+allowlist is a dejima control configured per launch, though, not a property of
+this VM: rule `6c` is the part this project is responsible for.
+
+##### Scope the token as well
+
+If your Loki has access control, give this devbox one that can write dejima's
+streams and nothing more. A token that can write more widely lets a compromised
+devbox forge log lines that appear to come from your other machines; one that
+can **read** lets it learn what your monitoring noticed about it. Grafana reads
+the same Loki with its own credential and needs no write scope at all.
+
 ### Then apply it, per VM
 
 A security group carries **rules and nothing else**. The policies are not part
