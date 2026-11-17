@@ -8,7 +8,7 @@ snapshot: required
 
 # v5: let dejima-guard collect from this devbox
 
-**Only if you run [dejima-guard](https://gitbox.branderson.io/dejima/dejima-guard).**
+**Only if you run [dejima-guard](https://github.com/dejima-org/dejima-guard).**
 If you do not, there is nothing to do and you can record this version and move
 on.
 

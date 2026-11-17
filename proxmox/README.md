@@ -288,7 +288,7 @@ trying to connect, and this tool does not go looking for things to connect to.
 
 #### One more, if you run dejima-guard elsewhere
 
-[dejima-guard](https://gitbox.branderson.io/dejima/dejima-guard) watches this
+[dejima-guard](https://github.com/dejima-org/dejima-guard) watches this
 devbox from a machine that is not this devbox. It connects over SSH, so:
 
 | # | Direction | Action | Protocol | Dest. port | Source / Dest | Why |

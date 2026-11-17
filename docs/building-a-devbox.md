@@ -67,7 +67,7 @@ out whether a step works by trying it rather than by reasoning about it.
 
 ```sh
 sudo apt-get update && sudo apt-get install -y git
-git clone https://gitbox.branderson.io/dejima/dejima-devbox-hardener
+git clone https://github.com/dejima-org/dejima-devbox-hardener
 cd dejima-devbox-hardener
 sudo ./bin/dejima-devbox-bootstrap
 ```
@@ -147,7 +147,7 @@ rather than as a group that has not taken effect.
 `~/.claude/hooks`, and writes a starter `~/.config/dejima/config`. Put
 `~/.local/bin` on your `PATH`. What comes after that - a forge, a workflow, a
 push credential - is in
-[dejima's README](https://gitbox.branderson.io/dejima/dejima#setup). A fresh
+[dejima's README](https://github.com/dejima-org/dejima#setup). A fresh
 config pushes nowhere until you choose one.
 
 The line is deliberate. This repository hardens the machine dejima runs on, and
@@ -217,7 +217,7 @@ that distinction is not pedantry.
 <a id="guard-access"></a>
 
 Skip this if you do not run
-[dejima-guard](https://gitbox.branderson.io/dejima/dejima-guard).
+[dejima-guard](https://github.com/dejima-org/dejima-guard).
 
 It collects from this box over SSH. Two things make that worth as little as
 possible to whoever eventually takes the guard: a forced command, and a sudoers
@@ -309,7 +309,7 @@ to.** A session's forge is the one you chose; everywhere else is where its
 dependencies and its reading live. dejima blocks GitHub push by default for
 that reason and states the argument in full, including what an unsolicited pull
 request costs the people receiving it, at [GitHub push: blocked by
-default](https://gitbox.branderson.io/dejima/dejima/src/branch/main/docs/security.md#github-push-blocked-by-default-optional-opt-in).
+default](https://github.com/dejima-org/dejima/blob/main/docs/security.md#github-push-blocked-by-default-optional-opt-in).
 It is not restated here, so that there is one copy of it to keep right.
 
 **Do not forward your agent in.** `ssh -A` lends this VM your keys for the life
